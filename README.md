@@ -29,6 +29,10 @@ To add new phrase and state you must obey file-format:
 ```json
 {
     "STATE_WHICH_BOT_START": {
+        "#": {
+            "message": "YOUR_BOT_CALLBACK_ANSWER",
+            "next": "NEXT_STATE"
+        },
         "MESSAGE_FROM_USER": {
             "message": "YOUR_BOT_ANSWER",
             "next": "NEXT_STATE"
@@ -40,7 +44,7 @@ To add new phrase and state you must obey file-format:
     }
 }
 ```
-``*`` in this case is unknown message from user
-
+``*`` in this case means unknown message (**obligatory** to be in every state)<br>
+``#`` in this case means callback message handler (this message is restricted in bot)
 
 
