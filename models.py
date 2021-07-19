@@ -116,9 +116,24 @@ class Discussion(SqlAlchemyBase):
 
             session.commit()
 
+    def update(self):
+        with contextlib.closing(create_session()) as session:
+            discussion = session.query(Discussion).filter(Discussion.id == self.id).first()
+
+            self.theme = discussion.theme
+            self.finished = discussion.finished
+
+    def get_last_message(self):
+        with contextlib.closing(create_session()) as session:
+            return session.query(Dialog).filter(Dialog.discussion_id == self.id).all()[-1]
+
+    def get_last_question(self):
+        with contextlib.closing(create_session()) as session:
+            return session.query(Dialog).filter(Dialog.discussion_id == self.id, Dialog.moderator == False).all()[-1]
+
     def get_questions(self):
         with contextlib.closing(create_session()) as session:
-            return session.query(Question).filter(Question.discussion_id == self.id).all()
+            return session.query(Dialog).filter(Dialog.discussion_id == self.id, Dialog.moderator == False).all()
 
     @staticmethod
     def add(user_id: int, theme: str):
@@ -135,54 +150,41 @@ class Discussion(SqlAlchemyBase):
     @staticmethod
     def get_discussions(user_id: int):
         with contextlib.closing(create_session()) as session:
-            return session.query(Discussion).filter(Discussion.user_id == user_id, Discussion.finished == 0).all()
+            return session.query(Discussion).filter(Discussion.user_id == user_id, Discussion.finished == False).all()
 
     def __repr__(self):
         return f'Discussion(user_id={self.user_id}, theme="{self.theme})"'
 
 
-class Question(SqlAlchemyBase):
-    __tablename__ = 'questions'
+class Dialog(SqlAlchemyBase):
+    __tablename__ = 'dialogs'
 
     id = sqlalchemy.Column(sqlalchemy.Integer, primary_key=True, nullable=False, autoincrement=True)
     discussion_id = sqlalchemy.Column(sqlalchemy.Integer, sqlalchemy.ForeignKey("discussions.id"))
-    question = sqlalchemy.Column(sqlalchemy.TEXT, nullable=False)
-    answer = sqlalchemy.Column(sqlalchemy.TEXT, nullable=True)
-    question_time = sqlalchemy.Column(sqlalchemy.TIMESTAMP, nullable=False)
-    answer_time = sqlalchemy.Column(sqlalchemy.TIMESTAMP, nullable=True)
-    who_asked = sqlalchemy.Column(sqlalchemy.Integer, nullable=False)
-    who_answered = sqlalchemy.Column(sqlalchemy.Integer, nullable=True)
-    bot_message_id = sqlalchemy.Column(sqlalchemy.Integer, nullable=True)
-    question_message_id = sqlalchemy.Column(sqlalchemy.Integer, nullable=False)
-    answer_message_id = sqlalchemy.Column(sqlalchemy.Integer, nullable=True)
-
-    def set_answer(self, answer: str, who_answered: int, answer_message_id: int):
-        with contextlib.closing(create_session()) as session:
-            logging.info(f'Add answer to {self} -> Answer(who_answered={who_answered}, answer_message_id={answer_message_id})')
-            question = session.query(Question).filter(Question.id == self.id).first()
-
-            self.answer = question.answer = answer
-            self.who_answered = question.who_answered = who_answered
-            self.answer_message_id = question.answer_message_id = answer_message_id
-            self.answer_time = question.answer_time = datetime.now()
-
-            session.commit()
+    text = sqlalchemy.Column(sqlalchemy.TEXT, nullable=False)
+    who = sqlalchemy.Column(sqlalchemy.Integer, nullable=False)
+    time = sqlalchemy.Column(sqlalchemy.TIMESTAMP, nullable=False)
+    message_id = sqlalchemy.Column(sqlalchemy.Integer, nullable=False)
+    bot_message_id = sqlalchemy.Column(sqlalchemy.Integer, nullable=False)
+    moderator = sqlalchemy.Column(sqlalchemy.Boolean, default=False, nullable=False)
 
     @staticmethod
-    def add(discussion_id: int, question: str, who_asked: int, question_message_id: int, bot_message_id: int):
+    def add(discussion_id: int, text: str, who: int, message_id: int, bot_message_id: int, moderator: bool = None):
         with contextlib.closing(create_session()) as session:
-            logging.info(f'Add new Question(discussion_id={discussion_id}, who_asked={who_asked}, bot_message_id={bot_message_id}) to database')
-            session.add(Question(
-                discussion_id=discussion_id, question=question,
-                who_asked=who_asked, question_message_id=question_message_id,
-                question_time=datetime.now(), bot_message_id=bot_message_id)
+            logging.info(f'Add new Dialog(discussion_id={discussion_id}, who={who}, moderator={moderator}) to database')
+
+            session.add(Dialog(
+                discussion_id=discussion_id, text=text, who=who, time=datetime.now(),
+                message_id=message_id, bot_message_id=bot_message_id, moderator=moderator)
             )
+
             session.commit()
 
     @staticmethod
-    def get(bot_message_id: int):
+    def get_question(bot_message_id: int):
         with contextlib.closing(create_session()) as session:
-            return session.query(Question).filter(Question.bot_message_id == bot_message_id).first()
+            return session.query(Dialog).filter(Dialog.bot_message_id == bot_message_id, Dialog.moderator == False).first()
 
     def __repr__(self):
-        return f'Question(id={self.id}, who_asked={self.who_asked}, who_answered={self.who_answered})'
+        return f'Dialog(discussion_id={self.discussion_id}, who={self.who}, moderator={self.moderator})'
+

@@ -1,5 +1,6 @@
 import logging
 import os
+import asyncio
 
 import dotenv
 from aiogram import Bot, Dispatcher, executor
@@ -10,8 +11,8 @@ from aiogram.types.reply_keyboard import ReplyKeyboardRemove
 
 import database
 import filters
-from models import User, UserInfo, Discussion, Question
-from bot_functions import get_reply, is_unknown_reply
+from models import User, UserInfo, Discussion, Dialog
+from bot_functions import get_reply, is_unknown_reply, button_to_command, read_config
 
 
 # Configure logging
@@ -28,8 +29,12 @@ BOT_TOKEN = os.getenv('BOT_TOKEN')
 CONNECTION_STRING = os.getenv('CONNECTION_STRING')
 MODERATOR_CHAT = os.getenv('MODERATOR_CHAT')
 
+if BOT_TOKEN is None:
+    logging.critical('No BOT_TOKEN variable found in project environment')
+if CONNECTION_STRING is None:
+    logging.critical('No CONNECTION_STRING variable found in project environment')
 if MODERATOR_CHAT is None:
-    logging.warning('MODERATOR_CHAT variable is undefined. Set this variable in .env file for proper work')
+    logging.warning('No MODERATOR_CHAT variable found in project environment. Set this variable for proper work')
 else:
     MODERATOR_CHAT = int(MODERATOR_CHAT)
 
@@ -41,6 +46,47 @@ bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(bot)
 
 
+def get_keyboard_markup(user_state: str, message_text: str, safe: bool = True, skip: list or tuple = tuple()) -> ReplyKeyboardMarkup:
+    keyboard = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
+    for button in get_reply(user_state, message_text, keyboard_buttons=True, safe=safe):
+        if button['text'] not in skip:
+            keyboard.add(KeyboardButton(button['text']))
+    return keyboard
+
+
+def get_inline_markup(user_state: str, message_text: str, safe: bool = True) -> InlineKeyboardMarkup:
+    keyboard = InlineKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
+    for button in get_reply(user_state, message_text, inline_buttons=True, safe=safe):
+        keyboard.add(InlineKeyboardButton(button['text'], callback_data=button['command']))
+    return keyboard
+
+
+async def close_discussion_automatically(discussion_id: int):
+    discussion: Discussion = Discussion.get(discussion_id)
+
+    start_time = discussion.get_last_message().time
+    await asyncio.sleep(read_config()['waiting_time'])
+    discussion.update()
+    end_time = discussion.get_last_message().time
+
+    if start_time == end_time and discussion.finished == False:
+        discussion.set(finished=True)
+
+        logging.info(f'Closing all questions in moderator_chat about {discussion} due to time limit')
+        for question in discussion.get_questions():
+            moderator_chat_message: str = get_reply('moderator_chat', '#CLOSED')['moderator_chat_message']
+            moderator_chat_message = moderator_chat_message.replace('%theme%', discussion.theme)
+            moderator_chat_message = moderator_chat_message.replace('%id%', str(discussion.id))
+            moderator_chat_message = moderator_chat_message.replace('%text%', question.text)
+
+            await bot.edit_message_text(moderator_chat_message, MODERATOR_CHAT, question.bot_message_id)
+
+        user_chat_message: str = get_reply('moderator_chat', '#CLOSED')['user_chat_message']
+        user_chat_message = user_chat_message.replace('%theme%', discussion.theme)
+        user_chat_message = user_chat_message.replace('%id%', str(discussion.id))
+        await bot.send_message(discussion.user_id, user_chat_message, reply_to_message_id=discussion.get_last_question().message_id)
+
+
 @dp.message_handler(commands=['get_chat_id'])
 async def send_chat_id(message: Message):
     await message.reply(f"id этого чата:\n{message.chat.id}")
@@ -50,18 +96,30 @@ async def send_chat_id(message: Message):
 async def group_chat(message: Message):
     if message.chat.id != MODERATOR_CHAT:  # bot can only read MODERATOR chat
         return
-    if message.reply_to_message is None:
+    if message.reply_to_message is None:  # only read replies
         return
     bot_message_id = message.reply_to_message.message_id
-    question = Question.get(bot_message_id)
-    if question is None:
+    question: Dialog = Dialog.get_question(bot_message_id)
+    if question is None:  # if it's not random reply
         return
     discussion = Discussion.get(question.discussion_id)
-    question.set_answer(message.text, message.from_user.id, message.message_id)
-    moderator_chat_message = f"[{discussion.theme} #{discussion.id} #WAITING]\n\n{question.question}"
-    message_text = f"Ответ на вопрос по теме: [{discussion.theme} #{discussion.id}]\n\n{message.text}\n\nПерейдите на страницу /ask чтобы продолжть обсуждение по этому вопросу"
-    await bot.send_message(question.who_asked, message_text, reply_to_message_id=question.question_message_id)
-    await bot.edit_message_text(moderator_chat_message, MODERATOR_CHAT, question.bot_message_id)
+
+    Dialog.add(question.discussion_id, message.text, message.from_user.id, message.message_id, bot_message_id, moderator=True)
+    moderator_chat_message: str = get_reply('moderator_chat', '#WAITING')['moderator_chat_message']
+    moderator_chat_message = moderator_chat_message.replace('%theme%', discussion.theme)
+    moderator_chat_message = moderator_chat_message.replace('%id%', str(discussion.id))
+    moderator_chat_message = moderator_chat_message.replace('%text%', question.text)
+
+    user_chat_message: str = get_reply('moderator_chat', '#WAITING')['user_chat_message']
+    user_chat_message = user_chat_message.replace('%theme%', discussion.theme)
+    user_chat_message = user_chat_message.replace('%id%', str(discussion.id))
+    user_chat_message = user_chat_message.replace('%text%', message.text)
+
+    await bot.send_message(question.who, user_chat_message, reply_to_message_id=question.message_id)
+    if (message.reply_to_message.text != moderator_chat_message) and (not discussion.finished):  # if messages are not the same AND discussion not
+        await bot.edit_message_text(moderator_chat_message, MODERATOR_CHAT, question.bot_message_id)
+
+    asyncio.get_event_loop().create_task(close_discussion_automatically(discussion.id))
 
 
 @dp.message_handler(lambda msg: filters.user_not_in_database(msg))
@@ -72,9 +130,10 @@ async def add_user_to_database(message: Message):
     user: User = User.get(message.from_user.id)
 
     reply = get_reply(user.state, message.text)
+    keyboard = ReplyKeyboardRemove()
 
     user.set(state=reply['next'])
-    await message.answer(reply['message'])
+    await message.answer(reply['message'], reply_markup=keyboard)
 
 
 @dp.message_handler(lambda msg: filters.state_is(msg, 'registered') and msg.text == '/ask' or filters.is_question_page(msg))
@@ -82,63 +141,80 @@ async def question_menu(message: Message):
     user: User = User.get(message.from_user.id)
     logging.info(f'{user} sent "{message.text}"')
 
+    if button_to_command(user.state, message.text) is not None:  # если это текст кнопки, то заменяем текст на комманду
+        message.text = button_to_command(user.state, message.text)
     reply = get_reply(user.state, message.text)
     keyboard = ReplyKeyboardRemove()
 
     if user.state == 'registered':
-        keyboard = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
-        keyboard.add(KeyboardButton('/new_question'))
-        keyboard.add(KeyboardButton('/my_questions'))
-        keyboard.add(KeyboardButton('/help'))
-        keyboard.add(KeyboardButton('/leave'))
+        keyboard = get_keyboard_markup(user.state, message.text)
+
     elif user.state == 'question_menu':
         if message.text == '/leave':
             pass
         elif message.text == '/new_question':
-            keyboard = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
-            keyboard.add(KeyboardButton('Соревнования'))
-            keyboard.add(KeyboardButton('Команды'))
-            keyboard.add(KeyboardButton('Регистрация'))
-            keyboard.add(KeyboardButton('Другое'))
+            reply = get_reply(user.state, '/new_question')
+            keyboard = get_keyboard_markup(user.state, message.text)
+
         elif message.text == '/my_questions':
             keyboard = InlineKeyboardMarkup()
             for discussion in Discussion.get_discussions(message.from_user.id):
                 keyboard.add(InlineKeyboardButton(f"[{discussion.theme} #{discussion.id}]", callback_data=f"{discussion.id}"))
-            keyboard.add(InlineKeyboardButton('/cancel', callback_data='/cancel'))
+            for button in get_reply(user.state, message.text, inline_buttons=True):
+                keyboard.add(InlineKeyboardButton(button['text'], callback_data=button['command']))
+        else:
+            keyboard = get_keyboard_markup(user.state, '*')
+
     elif user.state == 'user_questions':
-        keyboard = InlineKeyboardMarkup()
-        for discussion in Discussion.get_discussions(message.from_user.id):
-            keyboard.add(InlineKeyboardButton(f"[{discussion.theme} #{discussion.id}]", callback_data=f"{discussion.id}"))
-        keyboard.add(InlineKeyboardButton('/cancel', callback_data='/cancel'))
-    elif user.state == 'question1' and (not is_unknown_reply(user.state, message.text)):
-        Discussion.add(message.from_user.id, message.text)
-        discussion = Discussion.get_discussions(message.from_user.id)[-1]
-        user.set(cache=str(discussion.id))
-    elif user.state == 'question2':
-        discussion = Discussion.get(int(user.cache))
-        moderator_chat_message = f"[{discussion.theme} #{discussion.id} #OPEN]\n\n{message.text}"
-        bot_message = await bot.send_message(MODERATOR_CHAT, moderator_chat_message)
-        Question.add(discussion.id, message.text, message.from_user.id, message.message_id, bot_message.message_id)
-    elif user.state == 'user_question1':
-        if is_unknown_reply(user.state, message.text):
-            keyboard = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
-            keyboard.add(KeyboardButton('/continue'))
-            keyboard.add(KeyboardButton('/close'))
-            keyboard.add(KeyboardButton('/cancel'))
-        elif message.text == '/cancel':
+        if message.text == '/cancel':
+            keyboard = get_keyboard_markup(user.state, message.text)
+        else:
             keyboard = InlineKeyboardMarkup()
             for discussion in Discussion.get_discussions(message.from_user.id):
                 keyboard.add(InlineKeyboardButton(f"[{discussion.theme} #{discussion.id}]", callback_data=f"{discussion.id}"))
-            keyboard.add(InlineKeyboardButton('/cancel', callback_data='/cancel'))
+            for button in get_reply(user.state, message.text, inline_buttons=True):
+                keyboard.add(InlineKeyboardButton(button['text'], callback_data=button['command']))
+    elif user.state == 'question1':
+        if not is_unknown_reply(user.state, message.text):
+            Discussion.add(message.from_user.id, message.text)
+            discussion = Discussion.get_discussions(message.from_user.id)[-1]
+            user.set(cache=str(discussion.id))
+        else:
+            keyboard = get_keyboard_markup(user.state, '*')
+    elif user.state == 'question2':
+        discussion = Discussion.get(int(user.cache))
+        moderator_chat_message: str = get_reply('moderator_chat', '#OPEN')['moderator_chat_message']
+        moderator_chat_message = moderator_chat_message.replace('%theme%', discussion.theme)
+        moderator_chat_message = moderator_chat_message.replace('%id%', str(discussion.id))
+        moderator_chat_message = moderator_chat_message.replace('%text%', message.text)
+        bot_message = await bot.send_message(MODERATOR_CHAT, moderator_chat_message)
+        Dialog.add(discussion.id, message.text, message.from_user.id, message.message_id, bot_message.message_id, moderator=False)
+        user.set(cache='')
+        keyboard = get_keyboard_markup(user.state, '*')
+
+    elif user.state == 'user_question1':
+        if message.text == '/cancel':
+            keyboard = InlineKeyboardMarkup()
+            for discussion in Discussion.get_discussions(message.from_user.id):
+                keyboard.add(InlineKeyboardButton(f"[{discussion.theme} #{discussion.id}]", callback_data=f"{discussion.id}"))
+            for button in get_reply(user.state, message.text, inline_buttons=True):
+                keyboard.add(InlineKeyboardButton(button['text'], callback_data=button['command']))
         elif message.text == '/close':
-            discussion = Discussion.get(user.cache)
+            discussion: Discussion = Discussion.get(int(user.cache))
             discussion.set(finished=True)
             user.set(cache="")
+            keyboard = get_keyboard_markup(user.state, message.text)
 
-            logging.info(f'Deleting all messages in moderator_chat about {discussion}')
+            logging.info(f'Closing all questions in moderator_chat about {discussion}')
             for question in discussion.get_questions():
-                moderator_chat_message = f"[{discussion.theme} #{discussion.id} #CLOSED]\n\n{question.question}"
+                moderator_chat_message: str = get_reply('moderator_chat', '#CLOSED')['moderator_chat_message']
+                moderator_chat_message = moderator_chat_message.replace('%theme%', discussion.theme)
+                moderator_chat_message = moderator_chat_message.replace('%id%', str(discussion.id))
+                moderator_chat_message = moderator_chat_message.replace('%text%', question.text)
+
                 await bot.edit_message_text(moderator_chat_message, MODERATOR_CHAT, question.bot_message_id)
+        else:
+            keyboard = get_keyboard_markup(user.state, '*')
 
     user.set(state=reply['next'])
     await message.answer(reply['message'], reply_markup=keyboard)
@@ -154,14 +230,12 @@ async def question_menu_callback(callback_query: CallbackQuery):
 
     if user.state == 'user_questions':
         if callback_query.data == '/cancel':
-            reply = get_reply(user.state, '/cancel')
+            reply = get_reply(user.state, callback_query.data)
+            keyboard = get_keyboard_markup(user.state, callback_query.data)
         elif any(int(callback_query.data) == discussion.id for discussion in Discussion.get_discussions(callback_query.from_user.id)):
             reply = get_reply(user.state, callback=True)
             user.set(cache=callback_query.data)
-            keyboard = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
-            keyboard.add(KeyboardButton('/continue'))
-            keyboard.add(KeyboardButton('/close'))
-            keyboard.add(KeyboardButton('/cancel'))
+            keyboard = get_keyboard_markup(user.state, '#', safe=False)
         else:
             reply = get_reply(user.state)
 
@@ -174,6 +248,8 @@ async def register(message: Message):
     user: User = User.get(message.from_user.id)
     user_info: UserInfo = UserInfo.get(message.from_user.id)
 
+    if button_to_command(user.state, message.text) is not None:  # если это текст кнопки, то заменяем текст на комманду
+        message.text = button_to_command(user.state, message.text)
     reply = get_reply(user.state, message.text)
     keyboard = ReplyKeyboardRemove()
 
@@ -181,56 +257,56 @@ async def register(message: Message):
         user_info.set(surname=message.text)
     elif user.state == 'register2':
         user_info.set(name=message.text)
-        keyboard = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
-        keyboard.add(KeyboardButton('Нет отчества'))
+        keyboard = get_inline_markup(user.state, '*')
 
     elif user.state == 'register3':
-        user_info.set(patronymic=(None if message.text == 'Нет отчества' else message.text))
+        if message.text != '/skip':
+            user_info.set(patronymic=message.text)
 
     elif user.state == 'register4':
         user_info.set(email=message.text)
-        keyboard = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
-        keyboard.add(KeyboardButton('Инженер'))
-        keyboard.add(KeyboardButton('Химик-биолог'))
-        keyboard.add(KeyboardButton('Программист'))
-        keyboard.add(KeyboardButton('Копирайтер'))
-        keyboard.add(KeyboardButton('Дизайнер'))
+        keyboard = get_keyboard_markup(user.state, '*')
 
     elif user.state == 'register5':
         if is_unknown_reply(user.state, message.text):
-            keyboard = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
-            keyboard.add(KeyboardButton('Инженер'))
-            keyboard.add(KeyboardButton('Химик-биолог'))
-            keyboard.add(KeyboardButton('Программист'))
-            keyboard.add(KeyboardButton('Копирайтер'))
-            keyboard.add(KeyboardButton('Дизайнер'))
+            keyboard = get_keyboard_markup(user.state, '*')
         else:
             user_info.set(job=message.text)
-            keyboard = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
-            if user_info.job != 'Инженер': keyboard.add(KeyboardButton('Инженер'))
-            if user_info.job != 'Химик-биолог': keyboard.add(KeyboardButton('Химик-биолог'))
-            if user_info.job != 'Программист': keyboard.add(KeyboardButton('Программист'))
-            if user_info.job != 'Копирайтер': keyboard.add(KeyboardButton('Копирайтер'))
-            if user_info.job != 'Дизайнер': keyboard.add(KeyboardButton('Дизайнер'))
-            keyboard.add(KeyboardButton('Пропустить'))
+            user.set(cache=message.text)
+            keyboard = get_keyboard_markup(user.state, message.text, skip=(user.cache,))
 
     elif user.state == 'register6':
         if is_unknown_reply(user.state, message.text):
-            keyboard = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
-            if user_info.job != 'Инженер': keyboard.add(KeyboardButton('Инженер'))
-            if user_info.job != 'Химик-биолог': keyboard.add(KeyboardButton('Химик-биолог'))
-            if user_info.job != 'Программист': keyboard.add(KeyboardButton('Программист'))
-            if user_info.job != 'Копирайтер': keyboard.add(KeyboardButton('Копирайтер'))
-            if user_info.job != 'Дизайнер': keyboard.add(KeyboardButton('Дизайнер'))
-            keyboard.add(KeyboardButton('Пропустить'))
+            keyboard = get_keyboard_markup(user.state, '*', skip=(user.cache,))
         else:
             if message.text != 'Пропустить' and message.text != user_info.job:
                 user_info.set(job=user_info.job + ';' + message.text)
+            user.set(cache='')
 
             # TODO: отправить собранные данные на сервер
 
     user.set(state=reply['next'])
     await message.answer(reply['message'], reply_markup=keyboard)
+
+
+@dp.callback_query_handler(lambda msg: filters.state_is_register(msg))
+async def register_callback(callback_query: CallbackQuery):
+    user: User = User.get(callback_query.from_user.id)
+    logging.info(f'{user} pressed button "{callback_query.data}"')
+
+    reply = dict()
+    keyboard = ReplyKeyboardRemove()
+
+    if user.state == 'register3':
+        if callback_query.data == '/skip':
+            reply = get_reply(user.state, callback_query.data)
+        else:
+            reply = get_reply(user.state)
+    else:
+        reply = get_reply(user.state)
+
+    user.set(state=reply['next'])
+    await bot.send_message(callback_query.from_user.id, reply['message'], reply_markup=keyboard)
 
 
 @dp.message_handler()
@@ -239,9 +315,10 @@ async def simple_commands(message: Message):
     logging.info(f'{user} sent "{message.text}"')
 
     reply = get_reply(user.state, message.text)
+    keyboard = ReplyKeyboardRemove()
 
     user.set(state=reply['next'])
-    await message.answer(reply['message'], reply_markup=ReplyKeyboardRemove())
+    await message.answer(reply['message'], reply_markup=keyboard)
 
 
 if __name__ == '__main__':
