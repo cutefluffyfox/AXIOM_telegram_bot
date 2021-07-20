@@ -23,7 +23,17 @@
     "*": {
       "message": "Выберите команду из списка /help",
       "next": "not_registered"
-    }
+    },
+    "#KeyboardButtons": [
+      {
+        "text": "Наш канал",
+        "command": "/channels"
+      },
+      {
+        "text": "Регистрация",
+        "command": "/register"
+      }
+    ]
   },
 
 
@@ -195,13 +205,122 @@
       "message": "Мы в телеграмме: [ссылка]\nМы в вк: [ссылка]\n\nСписок команд: /help",
       "next": "registered"
     },
+    "/suggest": {
+      "message": "Выберите что хотите сделать:\n/new_suggestion - написать новое пожелание/предложение\n/my_suggestion - посмотреть ваши прошлые пожелания и предложения\n/leave - выйти из этого режима",
+      "next": "suggestion_menu"
+    },
     "*": {
       "message": "Выберите команду из списка /help",
       "next": "registered"
-    }
+    },
+    "#KeyboardButtons": [
+      {
+        "text": "Наш канал",
+        "command": "/channels"
+      },
+      {
+        "text": "Задать вопрос",
+        "command": "/ask"
+      },
+      {
+        "text": "Пожелания и предложения",
+        "command": "/suggest"
+      }
+    ]
   },
 
 
+
+  "suggestion_menu": {
+    "/new_suggestion": {
+      "message": "Выберите тему пожелания/предложения",
+      "next": "suggestion1"
+    },
+    "/my_suggestions": {
+      "message": "Ваши прошлые пожелания и предложения",
+      "next": "user_suggestions"
+    },
+    "/leave": {
+      "message": "Выберите что хотите сделать:\n/help - вывести это сообщение\n/channels - получить ссылки на наши информационные каналы\n/questions - посмотреть часто задаваемые вопросы\n/ask - задать вопрос наставнику или продолжить обсуждение\n/join - вступить в существующую команду или собрать новую\n/suggest - предложить новое соревнование или новый сервис для платформы AXIOM\n/change - изменить данные о себе",
+      "next": "registered"
+    },
+    "/help": {
+      "message": "Выберите что хотите сделать:\n/new_suggestion - написать новое пожелание/предложение\n/my_suggestion - посмотреть ваши прошлые пожелания и предложения\n/leave - выйти из этого режима",
+      "next": "suggestion_menu"
+    },
+    "*": {
+      "message": "Выберите команду из списка /help",
+      "next": "suggestion_menu"
+    },
+    "#KeyboardButtons": [
+      {
+        "text": "Написать пожелание/предложение",
+        "command": "/new_suggestion"
+      },
+      {
+        "text": "Мои пожелания и предложения",
+        "command": "/my_suggestions"
+      },
+      {
+        "text": "Выйти",
+        "command": "/leave"
+      }
+    ]
+  },
+
+  "suggestion1": {
+    "Соревнования": {
+      "message": "Отправьте сюда вопрос. Он будет анонимно отправлен модератору",
+      "next": "suggestion2"
+    },
+    "Другое": {
+      "message": "Отправьте сюда вопрос. Он будет анонимно отправлен модератору",
+      "next": "suggestion2"
+    },
+    "*": {
+      "message": "Выберите тему из списка",
+      "next": "suggestion1"
+    },
+    "#KeyboardButtons": [
+        {
+          "text": "Соревнования",
+          "command": "Соревнования"
+        },
+        {
+          "text": "Другое",
+          "command": "Другое"
+        }
+    ]
+  },
+
+  "suggestion2": {
+    "*": {
+      "message": "Ваше предложение отправлено модератору. Скоро на него ответят.\n\nВыберите что хотите сделать:\n/new_suggestion - написать новое пожелание/предложение\n/my_suggestion - посмотреть ваши прошлые пожелания и предложения\n/leave - выйти из этого режима",
+      "next": "suggestion_menu"
+    }
+  },
+
+  "user_suggestions": {
+    "#": {
+      "user_chat_message": "Ваше предложение [%theme% #%id%]:\n\n%text%",
+      "message": "Выберите что хотите сделать:\n/new_suggestion - написать новое пожелание/предложение\n/my_suggestion - посмотреть ваши прошлые пожелания и предложения\n/leave - выйти из этого режима",
+      "next": "suggestion_menu"
+    },
+    "/cancel": {
+      "message": "Выберите что хотите сделать:\n/new_suggestion - написать новое пожелание/предложение\n/my_suggestion - посмотреть ваши прошлые пожелания и предложения\n/leave - выйти из этого режима",
+      "next": "suggestion_menu"
+    },
+    "*": {
+      "message": "Выберите предложение из списка либо выйдите из этого режима отправив /cancel",
+      "next": "user_suggestions"
+    },
+    "#InlineButtons": [
+        {
+          "text": "Выйти",
+          "command": "/cancel"
+        }
+    ]
+  },
 
 
 
@@ -363,6 +482,9 @@
     "#CLOSED": {
       "moderator_chat_message": "[%theme% #%id% #CLOSED]\n\n%text%",
       "user_chat_message": "Обсуждение [%theme% #%id%] закрыто из-за неактивности"
+    },
+    "#Suggestion": {
+      "admin_chat_message": "[%theme% #%id%]\n[%email% <a href=\"tg://user?id=%user_id%\">телеграм</a>]\n\n%text%"
     },
     "*": {
       "message": "Что-то пошло не так, мы доложили об этом техническому специалисту. Если вы были зарегестрированы, то мы вернём вас в ваше состояние через какое-то время",

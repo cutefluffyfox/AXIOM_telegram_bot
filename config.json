@@ -1,3 +1,6 @@
 {
-  "waiting_time": 1200
+  "waiting_time": 1200,
+  "moderator_chat": -521111351,
+  "admin_chat": -521111351,
+  "suggestions_limit": 7
 }

@@ -15,7 +15,7 @@ def state_is(message: Message, state: str) -> bool:
     return User.get(message.from_user.id).state == state
 
 
-def state_is_register(message: Message) -> bool:
+def is_register_menu(message: Message) -> bool:
     """
     Returns True when User.state is like 'registerID' where ID is positive integer number
     """
@@ -23,6 +23,10 @@ def state_is_register(message: Message) -> bool:
     return state[:8] == 'register' and state[8:].isdigit()
 
 
-def is_question_page(message: Message) -> bool:
+def is_question_menu(message: Message) -> bool:
     return 'question' in User.get(message.from_user.id).state
+
+
+def is_suggestion_menu(message: Message) -> bool:
+    return 'suggest' in User.get(message.from_user.id).state
 

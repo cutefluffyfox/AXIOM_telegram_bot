@@ -46,9 +46,16 @@ def get_keywords(state: str) -> dict:
         return state_messages
 
 
-def read_config() -> dict:
-    with open('answers.json', 'r', encoding='UTF-8') as file:
+def get_config() -> dict:
+    with open('config.json', 'r', encoding='UTF-8') as file:
         return json.load(file)
+
+
+def has_buttons(state: str) -> bool:
+    with open('answers.json', 'r', encoding='UTF-8') as file:
+        answers = json.load(file)
+        state_messages = answers.get(state, answers['*'])
+        return (state_messages.get('#KeyboardButtons') is not None) or (state_messages.get('#InlineButtons') is not None)
 
 # def send_independent_message(chat_id: int, text: str, **kwargs):
 #     logging.info('Sending independent message')

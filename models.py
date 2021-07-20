@@ -188,3 +188,44 @@ class Dialog(SqlAlchemyBase):
     def __repr__(self):
         return f'Dialog(discussion_id={self.discussion_id}, who={self.who}, moderator={self.moderator})'
 
+
+class Suggestion(SqlAlchemyBase):
+    __tablename__ = 'suggestions'
+
+    id = sqlalchemy.Column(sqlalchemy.Integer, primary_key=True, nullable=False, autoincrement=True)
+    user_id = sqlalchemy.Column(sqlalchemy.Integer, sqlalchemy.ForeignKey("users.id"), nullable=False)
+    theme = sqlalchemy.Column(sqlalchemy.TEXT, nullable=False)
+    text = sqlalchemy.Column(sqlalchemy.TEXT, nullable=True)
+
+    def set(self, theme: str = None, text: str = None):
+        with contextlib.closing(create_session()) as session:
+            logging.info(f'Set discussion {self} to ["{theme}", "{text[:20]}..."]')
+            suggestion = session.query(Suggestion).filter(Suggestion.id == self.id).first()
+
+            if theme is not None:
+                self.theme = suggestion.theme = theme
+            if text is not None:
+                self.text = suggestion.text = text
+
+            session.commit()
+
+    @staticmethod
+    def add(user_id: int, theme: str):
+        with contextlib.closing(create_session()) as session:
+            logging.info(f'Add Suggestion(user_id={user_id}, theme="{theme}") to database')
+            session.add(Suggestion(user_id=user_id, theme=theme))
+            session.commit()
+
+    @staticmethod
+    def get(suggestion_id: int):
+        with contextlib.closing(create_session()) as session:
+            return session.query(Suggestion).filter(Suggestion.id == suggestion_id).first()
+
+    @staticmethod
+    def get_suggestions(user_id: int):
+        with contextlib.closing(create_session()) as session:
+            return session.query(Suggestion).filter(Suggestion.user_id == user_id).all()
+
+    def __repr__(self):
+        return f'Suggestion(user_id={self.user_id}, theme="{self.theme})"'
+
