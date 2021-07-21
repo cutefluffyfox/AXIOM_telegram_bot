@@ -30,3 +30,10 @@ def is_question_menu(message: Message) -> bool:
 def is_suggestion_menu(message: Message) -> bool:
     return 'suggest' in User.get(message.from_user.id).state
 
+
+def is_upload_menu(message: Message) -> bool:
+    return 'upload' in User.get(message.from_user.id).state
+
+
+def is_faq_menu(message: Message) -> bool:
+    return 'faq' in User.get(message.from_user.id).state

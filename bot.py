@@ -4,7 +4,7 @@ import asyncio
 
 import dotenv
 from aiogram import Bot, Dispatcher, executor
-from aiogram.types import Message, CallbackQuery
+from aiogram.types import Message, CallbackQuery, ContentType
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.types.reply_keyboard import ReplyKeyboardRemove
@@ -12,7 +12,8 @@ from aiogram.types.reply_keyboard import ReplyKeyboardRemove
 import database
 import filters
 from models import User, UserInfo, Discussion, Dialog, Suggestion
-from bot_functions import get_reply, is_unknown_reply, button_to_command, get_config, has_buttons
+from bot_functions import (get_reply, is_unknown_reply, button_to_command, get_config, has_inline_buttons,
+                           has_keyboard_buttons, get_raw_button, parse_link)
 
 
 # Configure logging
@@ -41,19 +42,28 @@ bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(bot)
 
 
-def get_keyboard_markup(user_state: str, message_text: str, safe: bool = True, skip: list or tuple = tuple()) -> ReplyKeyboardMarkup:
-    keyboard = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
-    for button in get_reply(user_state, message_text, keyboard_buttons=True, safe=safe):
-        if button['text'] not in skip:
-            keyboard.add(KeyboardButton(button['text']))
-    return keyboard
+def get_markup(user_state: str, message_text: str = "", skip: list or tuple = tuple(), safe: bool = True) -> ReplyKeyboardMarkup or InlineKeyboardMarkup or ReplyKeyboardRemove:
+    print(user_state, message_text, ':', has_keyboard_buttons(user_state, message_text, safe=safe), has_inline_buttons(user_state, message_text, safe=safe))
+    if has_keyboard_buttons(user_state, message_text, safe=safe):
+
+        keyboard = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
+        for button in get_reply(user_state, message_text, keyboard_buttons=True, safe=safe):
+            if button['text'] not in skip:
+                keyboard.add(KeyboardButton(button['text']))
+        return keyboard
+    elif has_inline_buttons(user_state, message_text, safe=safe):
+        keyboard = InlineKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
+        for button in get_reply(user_state, message_text, inline_buttons=True, safe=safe):
+            keyboard.add(InlineKeyboardButton(button['text'], callback_data=button['command']))
+        return keyboard
+    else:
+        return ReplyKeyboardRemove()
 
 
-def get_inline_markup(user_state: str, message_text: str, safe: bool = True) -> InlineKeyboardMarkup:
-    keyboard = InlineKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
-    for button in get_reply(user_state, message_text, inline_buttons=True, safe=safe):
-        keyboard.add(InlineKeyboardButton(button['text'], callback_data=button['command']))
-    return keyboard
+async def send_answer(message: Message, reply: dict, keyboard: ReplyKeyboardRemove or InlineKeyboardMarkup or ReplyKeyboardMarkup):
+    if reply.get('extra') is not None:
+        await message.answer(reply['extra'])
+    await message.answer(reply['message'], reply_markup=keyboard)
 
 
 async def close_discussion_automatically(discussion_id: int):
@@ -125,57 +135,44 @@ async def add_user_to_database(message: Message):
     user: User = User.get(message.from_user.id)
 
     reply = get_reply(user.state, message.text)
-    keyboard = ReplyKeyboardRemove()
+    keyboard = get_markup(user.state, message.text)
 
     user.set(state=reply['next'])
-    await message.answer(reply['message'], reply_markup=keyboard)
+    await send_answer(message=message, reply=reply, keyboard=keyboard)
 
 
-@dp.message_handler(lambda msg: filters.state_is(msg, 'registered') and msg.text == '/ask' or filters.is_question_menu(msg))
+@dp.message_handler(lambda msg: filters.is_question_menu(msg))
 async def question_menu(message: Message):
     user: User = User.get(message.from_user.id)
     logging.info(f'{user} sent "{message.text}"')
 
-    if button_to_command(user.state, message.text) is not None:  # если это текст кнопки, то заменяем текст на комманду
-        message.text = button_to_command(user.state, message.text)
+    button_to_command(user.state, message)
     reply = get_reply(user.state, message.text)
-    keyboard = ReplyKeyboardRemove()
+    keyboard = get_markup(user.state, message.text)
 
-    if user.state == 'registered':
-        keyboard = get_keyboard_markup(user.state, message.text)
-
-    elif user.state == 'question_menu':
-        if message.text == '/leave':
-            keyboard = get_keyboard_markup(user.state, message.text)
-        elif message.text == '/new_question':
-            reply = get_reply(user.state, '/new_question')
-            keyboard = get_keyboard_markup(user.state, message.text)
-
-        elif message.text == '/my_questions':
+    if user.state == 'question_menu':
+        if message.text == '/my_questions':
             keyboard = InlineKeyboardMarkup()
             for discussion in Discussion.get_discussions(message.from_user.id):
                 keyboard.add(InlineKeyboardButton(f"[{discussion.theme} #{discussion.id}]", callback_data=f"{discussion.id}"))
             for button in get_reply(user.state, message.text, inline_buttons=True):
                 keyboard.add(InlineKeyboardButton(button['text'], callback_data=button['command']))
-        else:
-            keyboard = get_keyboard_markup(user.state, '*')
 
     elif user.state == 'user_questions':
-        if message.text == '/cancel':
-            keyboard = get_keyboard_markup(user.state, message.text)
-        else:
+        if message.text != '/cancel':
             keyboard = InlineKeyboardMarkup()
             for discussion in Discussion.get_discussions(message.from_user.id):
-                keyboard.add(InlineKeyboardButton(f"[{discussion.theme} #{discussion.id}]", callback_data=f"{discussion.id}"))
+                keyboard.add(
+                    InlineKeyboardButton(f"[{discussion.theme} #{discussion.id}]", callback_data=f"{discussion.id}"))
             for button in get_reply(user.state, message.text, inline_buttons=True):
                 keyboard.add(InlineKeyboardButton(button['text'], callback_data=button['command']))
+
     elif user.state == 'question1':
         if not is_unknown_reply(user.state, message.text):
             Discussion.add(message.from_user.id, message.text)
             discussion = Discussion.get_discussions(message.from_user.id)[-1]
             user.set(cache=str(discussion.id))
-        else:
-            keyboard = get_keyboard_markup(user.state, '*')
+
     elif user.state == 'question2':
         discussion = Discussion.get(int(user.cache))
         moderator_chat_message: str = get_reply('moderator_chat', '#OPEN')['moderator_chat_message']
@@ -185,7 +182,6 @@ async def question_menu(message: Message):
         bot_message = await bot.send_message(get_config()['moderator_chat'], moderator_chat_message)
         Dialog.add(discussion.id, message.text, message.from_user.id, message.message_id, bot_message.message_id, moderator=False)
         user.set(cache='')
-        keyboard = get_keyboard_markup(user.state, '*')
 
     elif user.state == 'user_question1':
         if message.text == '/cancel':
@@ -198,7 +194,6 @@ async def question_menu(message: Message):
             discussion: Discussion = Discussion.get(int(user.cache))
             discussion.set(finished=True)
             user.set(cache="")
-            keyboard = get_keyboard_markup(user.state, message.text)
 
             logging.info(f'Closing all questions in moderator_chat about {discussion}')
             for question in discussion.get_questions():
@@ -208,11 +203,9 @@ async def question_menu(message: Message):
                 moderator_chat_message = moderator_chat_message.replace('%text%', question.text)
 
                 await bot.edit_message_text(moderator_chat_message, get_config()['moderator_chat'], question.bot_message_id)
-        else:
-            keyboard = get_keyboard_markup(user.state, '*')
 
     user.set(state=reply['next'])
-    await message.answer(reply['message'], reply_markup=keyboard)
+    await send_answer(message=message, reply=reply, keyboard=keyboard)
 
 
 @dp.callback_query_handler(lambda msg: filters.is_question_menu(msg))
@@ -220,71 +213,54 @@ async def question_menu_callback(callback_query: CallbackQuery):
     user: User = User.get(callback_query.from_user.id)
     logging.info(f'{user} pressed button "{callback_query.data}"')
 
-    reply = dict()
-    keyboard = ReplyKeyboardRemove()
+    reply = get_reply(user.state)
+    keyboard = get_markup(user.state)
 
     if user.state == 'user_questions':
         if callback_query.data == '/cancel':
             reply = get_reply(user.state, callback_query.data)
-            keyboard = get_keyboard_markup(user.state, callback_query.data)
+            keyboard = get_markup(user.state, callback_query.data)
+
         elif any(int(callback_query.data) == discussion.id for discussion in Discussion.get_discussions(callback_query.from_user.id)):
             reply = get_reply(user.state, callback=True)
             user.set(cache=callback_query.data)
-            keyboard = get_keyboard_markup(user.state, '#', safe=False)
-        else:
-            reply = get_reply(user.state)
-    else:
-        reply = get_reply(user.state, '*')
+            keyboard = get_markup(user.state, '#', safe=False)
 
     user.set(state=reply['next'])
     await bot.send_message(callback_query.from_user.id, reply['message'], reply_markup=keyboard)
 
 
-@dp.message_handler(lambda msg: filters.state_is(msg, 'registered') and msg.text == '/suggest' or filters.is_suggestion_menu(msg))
+@dp.message_handler(lambda msg: filters.is_suggestion_menu(msg))
 async def suggestion_menu(message: Message):
     user: User = User.get(message.from_user.id)
     logging.info(f'{user} sent "{message.text}"')
 
-    if button_to_command(user.state, message.text) is not None:  # если это текст кнопки, то заменяем текст на комманду
-        message.text = button_to_command(user.state, message.text)
+    button_to_command(user.state, message)
     reply = get_reply(user.state, message.text)
-    keyboard = ReplyKeyboardRemove()
+    keyboard = get_markup(user.state, message.text)
 
-    if user.state == 'registered':
-        keyboard = get_keyboard_markup(user.state, message.text)
-
-    elif user.state == 'suggestion_menu':
-        if message.text == '/leave':
-            keyboard = get_keyboard_markup(user.state, message.text)
-        elif message.text == '/new_suggestion':
-            reply = get_reply(user.state, message.text)
-            keyboard = get_keyboard_markup(user.state, message.text)
-
-        elif message.text == '/my_suggestions':
+    if user.state == 'suggestion_menu':
+        if message.text == '/my_suggestions':
             keyboard = InlineKeyboardMarkup()
             for suggestion in Suggestion.get_suggestions(message.from_user.id)[::-1][:get_config()['suggestions_limit']]:
                 keyboard.add(InlineKeyboardButton(f"[{suggestion.theme} #{suggestion.id}]", callback_data=f"{suggestion.id}"))
             for button in get_reply(user.state, message.text, inline_buttons=True):
                 keyboard.add(InlineKeyboardButton(button['text'], callback_data=button['command']))
-        else:
-            keyboard = get_keyboard_markup(user.state, '*')
 
     elif user.state == 'user_suggestions':
-        if message.text == '/cancel':
-            keyboard = get_keyboard_markup(user.state, message.text)
-        else:
+        if message.text != '/cancel':
             keyboard = InlineKeyboardMarkup()
             for suggestion in Suggestion.get_suggestions(message.from_user.id):
-                keyboard.add(InlineKeyboardButton(f"[{suggestion.theme} #{suggestion.id}]", callback_data=f"{suggestion.id}"))
+                keyboard.add(
+                    InlineKeyboardButton(f"[{suggestion.theme} #{suggestion.id}]", callback_data=f"{suggestion.id}"))
             for button in get_reply(user.state, message.text, inline_buttons=True):
                 keyboard.add(InlineKeyboardButton(button['text'], callback_data=button['command']))
+
     elif user.state == 'suggestion1':
         if not is_unknown_reply(user.state, message.text):
             Suggestion.add(message.from_user.id, message.text)
             suggestion = Suggestion.get_suggestions(message.from_user.id)[-1]
             user.set(cache=str(suggestion.id))
-        else:
-            keyboard = get_keyboard_markup(user.state, '*')
     elif user.state == 'suggestion2':
         user_info: UserInfo = UserInfo.get(user.id)
         suggestion = Suggestion.get(int(user.cache))
@@ -293,17 +269,16 @@ async def suggestion_menu(message: Message):
         admin_chat_message = admin_chat_message.replace('%id%', str(suggestion.id))
         admin_chat_message = admin_chat_message.replace('%email%', user_info.email)
         admin_chat_message = admin_chat_message.replace('%text%', message.text)
-        admin_chat_message = admin_chat_message.replace('%user_id%', str(user.id))
-
         admin_chat_message = admin_chat_message.replace('<', '[[')
         admin_chat_message = admin_chat_message.replace('>', ']]')
+        admin_chat_message = admin_chat_message.replace('%user_id%', f'<a href="tg://user?id={user.id}">телеграм</a>')
+
         await bot.send_message(get_config()['admin_chat'], admin_chat_message, parse_mode='HTML')
         suggestion.set(text=message.text)
         user.set(cache='')
-        keyboard = get_keyboard_markup(user.state, '*')
 
     user.set(state=reply['next'])
-    await message.answer(reply['message'], reply_markup=keyboard)
+    await send_answer(message=message, reply=reply, keyboard=keyboard)
 
 
 @dp.callback_query_handler(lambda msg: filters.is_suggestion_menu(msg))
@@ -311,13 +286,13 @@ async def suggestion_menu_callback(callback_query: CallbackQuery):
     user: User = User.get(callback_query.from_user.id)
     logging.info(f'{user} pressed button "{callback_query.data}"')
 
-    reply = dict()
-    keyboard = ReplyKeyboardRemove()
+    reply = get_reply(user.state)
+    keyboard = get_markup(user.state, callback_query.data)
 
     if user.state == 'user_suggestions':
         if callback_query.data == '/cancel':
             reply = get_reply(user.state, callback_query.data)
-            keyboard = get_keyboard_markup(user.state, callback_query.data)
+
         elif any(int(callback_query.data) == suggestion.id for suggestion in Suggestion.get_suggestions(callback_query.from_user.id)):
             reply = get_reply(user.state, callback=True)
             suggestion: Suggestion = Suggestion.get(int(callback_query.data))
@@ -326,33 +301,62 @@ async def suggestion_menu_callback(callback_query: CallbackQuery):
             user_chat_message = user_chat_message.replace('%id%', str(suggestion.id))
             user_chat_message = user_chat_message.replace('%text%', suggestion.text)
             await bot.send_message(callback_query.from_user.id, user_chat_message)
-            keyboard = get_keyboard_markup(user.state, '#', safe=False)
-        else:
-            reply = get_reply(user.state)
-    else:
-        reply = get_reply(user.state, '*')
-        if has_buttons(user.state):
-            keyboard = get_keyboard_markup(user.state, '*')
+            keyboard = get_markup(user.state, '#', safe=False)
 
     user.set(state=reply['next'])
     await bot.send_message(callback_query.from_user.id, reply['message'], reply_markup=keyboard)
+
+
+@dp.message_handler(lambda msg: filters.is_upload_menu(msg), content_types=ContentType.DOCUMENT)
+async def upload_menu_document(message: Message):
+    user: User = User.get(message.from_user.id)
+    logging.info(f'{user} sent document named "{message.document.file_name}"')
+
+    reply = get_reply(user.state, '#FileHandler', safe=False)
+    keyboard = get_markup(user.state, '#FileHandler', safe=False)
+
+    if message.document.mime_type == 'application/pdf':
+        await message.reply(reply['success_message'], reply_markup=keyboard)
+        # TODO download file & send it to server
+        print(message.document)
+    else:
+        await message.reply(reply['fail_message'], reply_markup=keyboard)
+
+    user.set(state=reply['next'])
+
+
+@dp.message_handler(lambda msg: filters.is_upload_menu(msg), content_types=[
+    ContentType.PHOTO, ContentType.ANIMATION, ContentType.AUDIO, ContentType.CONTACT,
+    ContentType.GAME, ContentType.INVOICE, ContentType.LOCATION, ContentType.PASSPORT_DATA,
+    ContentType.POLL, ContentType.STICKER, ContentType.SUCCESSFUL_PAYMENT, ContentType.VENUE,
+    ContentType.VIDEO, ContentType.VIDEO_NOTE, ContentType.VOICE])
+async def upload_menu_all_files(message: Message):
+    user: User = User.get(message.from_user.id)
+    logging.info(f'{user} sent random file')
+
+    reply = get_reply(user.state, '#FileHandler', safe=False)
+    keyboard = get_markup(user.state, '#FileHandler')
+
+    await message.reply(reply['fail_message'], reply_markup=keyboard)
+
+    user.set(state=reply['next'])
 
 
 @dp.message_handler(lambda msg: filters.is_register_menu(msg))
 async def register(message: Message):
     user: User = User.get(message.from_user.id)
     user_info: UserInfo = UserInfo.get(message.from_user.id)
+    logging.info(f'{user} sent "{message.text}"')
 
-    if button_to_command(user.state, message.text) is not None:  # если это текст кнопки, то заменяем текст на комманду
-        message.text = button_to_command(user.state, message.text)
+    button_to_command(user.state, message)
     reply = get_reply(user.state, message.text)
-    keyboard = ReplyKeyboardRemove()
+    keyboard = get_markup(user.state, message.text)
 
     if user.state == 'register1':
         user_info.set(surname=message.text)
+
     elif user.state == 'register2':
         user_info.set(name=message.text)
-        keyboard = get_inline_markup(user.state, '*')
 
     elif user.state == 'register3':
         if message.text != '/skip':
@@ -360,19 +364,16 @@ async def register(message: Message):
 
     elif user.state == 'register4':
         user_info.set(email=message.text)
-        keyboard = get_keyboard_markup(user.state, '*')
 
     elif user.state == 'register5':
-        if is_unknown_reply(user.state, message.text):
-            keyboard = get_keyboard_markup(user.state, '*')
-        else:
+        if not is_unknown_reply(user.state, message.text):
             user_info.set(job=message.text)
             user.set(cache=message.text)
-            keyboard = get_keyboard_markup(user.state, message.text, skip=(user.cache,))
+            keyboard = get_markup(user.state, message.text, skip=(user.cache,))
 
     elif user.state == 'register6':
         if is_unknown_reply(user.state, message.text):
-            keyboard = get_keyboard_markup(user.state, '*', skip=(user.cache,))
+            keyboard = get_markup(user.state, '*', skip=(user.cache,))
         else:
             if message.text != 'Пропустить' and message.text != user_info.job:
                 user_info.set(job=user_info.job + ';' + message.text)
@@ -381,7 +382,7 @@ async def register(message: Message):
             # TODO: отправить собранные данные на сервер
 
     user.set(state=reply['next'])
-    await message.answer(reply['message'], reply_markup=keyboard)
+    await send_answer(message=message, reply=reply, keyboard=keyboard)
 
 
 @dp.callback_query_handler(lambda msg: filters.is_register_menu(msg))
@@ -389,39 +390,52 @@ async def register_callback(callback_query: CallbackQuery):
     user: User = User.get(callback_query.from_user.id)
     logging.info(f'{user} pressed button "{callback_query.data}"')
 
-    reply = dict()
-    keyboard = ReplyKeyboardRemove()
+    reply = get_reply(user.state)
+    # keyboard = ReplyKeyboardRemove()
+    keyboard = get_markup(user.state, callback_query.data)
 
     if user.state == 'register3':
         if callback_query.data == '/skip':
             reply = get_reply(user.state, callback_query.data)
-        else:
-            reply = get_reply(user.state)
-    else:
-        reply = get_reply(user.state)
 
     user.set(state=reply['next'])
     await bot.send_message(callback_query.from_user.id, reply['message'], reply_markup=keyboard)
 
 
-@dp.message_handler()
-async def simple_commands(message: Message):
+@dp.message_handler(lambda msg: filters.is_faq_menu(msg))
+async def faq_menu(message: Message):
     user: User = User.get(message.from_user.id)
     logging.info(f'{user} sent "{message.text}"')
 
-    keyboard = ReplyKeyboardRemove()
-    if has_buttons(user.state):
-        if button_to_command(user.state, message.text) is not None:  # если это текст кнопки, то заменяем текст на комманду
-            message.text = button_to_command(user.state, message.text)
-            reply = get_reply(user.state, message.text)
-            if has_buttons(reply['next']):
-                keyboard = get_keyboard_markup(user.state, message.text)
-        else:
-            keyboard = get_keyboard_markup(user.state, '*')
+    button_to_command(user.state, message)
+    keyboard = get_markup(user.state, message.text)
+    reply = get_reply(user.state, message.text)
+
+    if message.text == '/leave':
+        auto_next = 'registered' if user.is_registered() else 'not_registered'
+
+        reply['message_link'] = [auto_next, '*']
+        reply['next'] = auto_next
+        reply = parse_link(reply, user.state)
+        keyboard = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
+        for button in get_raw_button(reply['next'], '#KeyboardButtons'):
+            keyboard.add(KeyboardButton(button['text']))
+
+    await send_answer(message=message, reply=reply, keyboard=keyboard)
+
+
+@dp.message_handler()
+async def simple_commands(message: Message):
+    user: User = User.get(message.from_user.id)
+    logging.info(f'{user} sent "{message.text}" : simple command handler')
+
+    button_to_command(user.state, message)
+    keyboard = get_markup(user.state, message.text)
+
     reply = get_reply(user.state, message.text)
 
     user.set(state=reply['next'])
-    await message.answer(reply['message'], reply_markup=keyboard)
+    await send_answer(message=message, reply=reply, keyboard=keyboard)
 
 
 if __name__ == '__main__':

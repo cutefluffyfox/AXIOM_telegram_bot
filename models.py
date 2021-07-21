@@ -26,6 +26,10 @@ class User(SqlAlchemyBase):
 
             session.commit()
 
+    def is_registered(self) -> bool:
+        with contextlib.closing(create_session()) as session:
+            return session.query(UserInfo).filter(UserInfo.user_id == self.id).first().all_filled()
+
     @staticmethod
     def add(user_id: int, state: str = None):
         with contextlib.closing(create_session()) as session:
