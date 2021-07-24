@@ -2,3 +2,6 @@ aiogram
 python-dotenv
 sqlalchemy
 requests
+wheel
+pymysql
+mysqlclient
