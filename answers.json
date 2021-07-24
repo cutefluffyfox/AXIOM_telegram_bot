@@ -2,7 +2,7 @@
   "start": {
     "*": {
       "extra": "Здравстуйте, я бот AXIOM!\nЯ создан чтобы вы могли легко и удобно зарегистрироваться в нашей системе, получить ответы на частозадаваемые вопросы и найти себе людей в команду",
-      "message_link": ["not_registered", "*"],
+      "message": ["not_registered", "*"],
       "next": "not_registered"
     }
   },
@@ -10,15 +10,21 @@
 
   "not_registered": {
     "/channels": {
-      "message": "Мы в телеграмме: [ссылка]\nМы в вк: [ссылка]",
+      "message": "Мы в телеграмме: [ссылка]\nМы в вк: [ссылка]\nНаш сайт: https://axiom-russia.org",
       "next": "not_registered"
     },
     "/register": {
-      "message": "Для того, чтобы зарегестрироваться, нам понадобится собрать о вас информацию. Введите вашу фамилию (в именительном падеже)",
+      "extra": "Для того, чтобы зарегестрироваться, нам понадобится собрать о вас информацию",
+      "message": "Введите вашу фамилию (в именительном падеже)",
       "next": "register1"
     },
     "/faq": {
-
+      "message": ["faq_menu", "*"],
+      "next": "faq_menu"
+    },
+    "/login": {
+      "message": "Чтобы войти нам надо понять кто вы. Введите ваш AXIOM_id (он состоит из 3 букв и 4 цифр и имеет вид AAA_0000)",
+      "next": "login1"
     },
     "*": {
       "message": "Выберите что хотите сделать:\n/register - зарегестрироваться в системе AXIOM\n/channels - получить ссылки на наши информационные каналы\n/faq - посмотреть часто задаваемые вопросы\n\n\n\nЧтобы получить доступ к остальным командам зарегестрируйтесь в этом боте при помощи /register",
@@ -34,6 +40,10 @@
         "command": "/register"
       },
       {
+        "text": "Вход",
+        "command": "/login"
+      },
+      {
         "text": "faq",
         "command": "/faq"
       }
@@ -41,8 +51,20 @@
   },
 
 
+  "login1": {
+    "*": {
+      "message": "Введите пароль от вашего аккаунта (он автоматически будет удалён ботом после)",
+      "next": "login2"
+    }
+  },
 
-
+  "login2": {
+    "*": {
+      "extra": "Вы успешно зашли в свой аккаунт!",
+      "message": ["registered", "*"],
+      "next": "registered"
+    }
+  },
 
 
 
@@ -62,7 +84,8 @@
 
   "register3": {
     "/skip": {
-      "message": "Отчество пропущено\nВведите вашу электронную почту",
+      "extra": "Отчество пропущено",
+      "message": "Введите вашу электронную почту",
       "next": "register4"
     },
     "*": {
@@ -89,23 +112,23 @@
       "success": "Выберите ещё одну специальность (если нет нажмите, \"Пропустить\")"
     },
     "Инженер": {
-      "message_link": ["#Template", "success"],
+      "message": ["#Template", "success"],
       "next": "register6"
     },
     "Химик-биолог": {
-      "message_link": ["#Template", "success"],
+      "message": ["#Template", "success"],
       "next": "register6"
     },
     "Программист": {
-      "message_link": ["#Template", "success"],
+      "message": ["#Template", "success"],
       "next": "register6"
     },
     "Копирайтер": {
-      "message_link": ["#Template", "success"],
+      "message": ["#Template", "success"],
       "next": "register6"
     },
     "Дизайнер": {
-      "message_link": ["#Template", "success"],
+      "message": ["#Template", "success"],
       "next": "register6"
     },
     "*": {
@@ -141,27 +164,33 @@
       "success": "Вы успешно зарегестрировались! Теперь вам открыт весь функционал нашей платформы. Выберите что хотите сделать:"
     },
     "Инженер": {
-      "message_link": ["#Template", "success"],
+      "extra": ["#Template", "success"],
+      "message": ["registered", "*"],
       "next": "registered"
     },
     "Химик-биолог": {
-      "message_link": ["#Template", "success"],
+      "extra": ["#Template", "success"],
+      "message": ["registered", "*"],
       "next": "registered"
     },
     "Программист": {
-      "message_link": ["#Template", "success"],
+      "extra": ["#Template", "success"],
+      "message": ["registered", "*"],
       "next": "registered"
     },
     "Копирайтер": {
-      "message_link": ["#Template", "success"],
+      "extra": ["#Template", "success"],
+      "message": ["registered", "*"],
       "next": "registered"
     },
     "Дизайнер": {
-      "message_link": ["#Template", "success"],
+      "extra": ["#Template", "success"],
+      "message": ["registered", "*"],
       "next": "registered"
     },
-    "Пропустить": {
-      "message_link": ["#Template", "success"],
+    "/skip": {
+      "extra": ["#Template", "success"],
+      "message": ["registered", "*"],
       "next": "registered"
     },
     "*": {
@@ -191,7 +220,7 @@
       },
       {
         "text": "Пропустить",
-        "command": "Пропустить"
+        "command": "/skip"
       }
     ]
   },
@@ -204,27 +233,31 @@
 
   "registered": {
     "/ask": {
-      "message_link": ["question_menu", "*"],
+      "message": ["question_menu", "*"],
       "next": "question_menu"
     },
     "/channels": {
-      "message_link": ["not_registered", "/channels"],
+      "message": ["not_registered", "/channels"],
       "next": "registered"
     },
     "/suggest": {
-      "message_link": ["suggestion_menu", "*"],
+      "message": ["suggestion_menu", "*"],
       "next": "suggestion_menu"
     },
+    "/edit": {
+      "message": ["edit_menu", "*"],
+      "next": "edit_menu"
+    },
     "/upload": {
-      "message_link": ["upload_menu", "*"],
+      "message": ["upload_menu", "*"],
       "next": "upload_menu"
     },
     "/faq": {
-      "message_link": ["faq_menu", "*"],
+      "message": ["faq_menu", "*"],
       "next": "faq_menu"
     },
     "*": {
-      "message": "Список команд этого бота:\n/channels - получить ссылки на наши информационные каналы\n/faq - посмотреть часто задаваемые вопросы\n/ask - задать вопрос наставнику или продолжить обсуждение\n/join - вступить в существующую команду или собрать новую\n/suggest - предложить новое соревнование или новый сервис для платформы AXIOM\n/upload - загрузить сканы дипломов\n/change - изменить данные о себе",
+      "message": "Список команд этого бота:\n/channels - получить ссылки на наши информационные каналы\n/faq - посмотреть часто задаваемые вопросы\n/ask - задать вопрос наставнику или продолжить обсуждение\n/join - вступить в существующую команду или собрать новую\n/suggest - предложить новое соревнование или новый сервис для платформы AXIOM\n/upload - загрузить сканы дипломов\n/edit - изменить данные о себе",
       "next": "registered"
     },
     "#KeyboardButtons": [
@@ -241,6 +274,10 @@
         "command": "/suggest"
       },
       {
+        "text": "Изменить свои данные",
+        "command": "/edit"
+      },
+      {
         "text": "Загрузить скан диплома",
         "command": "/upload"
       },
@@ -251,10 +288,219 @@
     ]
   },
 
+  "edit_menu": {
+    "/surname": {
+      "message": ["not_registered", "/register"],
+      "next": "edit_surname"
+    },
+    "/name": {
+      "message": ["register1", "*"],
+      "next": "edit_name"
+    },
+    "/patronymic":{
+      "message": ["register2", "*"],
+      "next": "edit_patronymic"
+    },
+    "/email": {
+      "message": ["register3", "*"],
+      "next": "edit_email"
+    },
+    "/job": {
+      "message": ["register4", "*"],
+      "next": "edit_job1"
+    },
+    "/leave": {
+      "message": ["registered", "*"],
+      "next": "registered"
+    },
+    "*": {
+      "message": "Выберите что хотите изменить:",
+      "next": "edit_menu"
+    },
+    "#InlineButtons": [
+      {
+        "text": "Фамилия: %surname%",
+        "command": "/surname"
+      },
+      {
+        "text": "Имя: %name%",
+        "command": "/name"
+      },
+      {
+        "text": "Отчество: %patronymic%",
+        "command": "/patronymic"
+      },
+      {
+        "text": "Email: %email%",
+        "command": "/email"
+      },
+      {
+        "text": "Навыки: %job%",
+        "command": "/job"
+      },
+      {
+        "text": "Выйти",
+        "command": "/leave"
+      }
+    ]
+  },
+
+  "edit_name": {
+    "*": {
+      "message": ["edit_menu", "*"],
+      "next": "edit_menu"
+    }
+  },
+
+  "edit_surname": {
+    "*": {
+      "message": ["edit_menu", "*"],
+      "next": "edit_menu"
+    }
+  },
+
+  "edit_patronymic": {
+    "#Template": {
+      "success": "Вы успешно изменили ваше отчевство"
+    },
+    "/skip": {
+      "message": ["edit_menu", "*"],
+      "next": "edit_menu"
+    },
+    "*": {
+      "message": ["edit_menu", "*"],
+      "next": "edit_menu"
+    },
+    "#InlineButtons": [
+      {
+        "text": "Нет отчества",
+        "command": "/skip"
+      }
+    ]
+  },
+
+  "edit_email": {
+    "*": {
+      "message": ["edit_menu", "*"],
+      "next": "edit_menu"
+    }
+  },
+
+  "edit_job1": {
+    "#Template": {
+      "success": "Выберите ещё одну специальность (если нет нажмите, \"Пропустить\")"
+    },
+    "Инженер": {
+      "message": ["#Template", "success"],
+      "next": "edit_job2"
+    },
+    "Химик-биолог": {
+      "message": ["#Template", "success"],
+      "next": "edit_job2"
+    },
+    "Программист": {
+      "message": ["#Template", "success"],
+      "next": "edit_job2"
+    },
+    "Копирайтер": {
+      "message": ["#Template", "success"],
+      "next": "edit_job2"
+    },
+    "Дизайнер": {
+      "message": ["#Template", "success"],
+      "next": "edit_job2"
+    },
+    "*": {
+      "message": "Выберите специальность из списка",
+      "next": "edit_job1"
+    },
+    "#KeyboardButtons": [
+      {
+        "text": "Инженер",
+        "command": "Инженер"
+      },
+      {
+        "text": "Химик-биолог",
+        "command": "Химик-биолог"
+      },
+      {
+        "text": "Программист",
+        "command": "Программист"
+      },
+      {
+        "text": "Копирайтер",
+        "command": "Копирайтер"
+      },
+      {
+        "text": "Дизайнер",
+        "command": "Дизайнер"
+      }
+    ]
+  },
+
+  "edit_job2": {
+    "Инженер": {
+      "message": ["edit_menu", "*"],
+      "next": "edit_menu"
+    },
+    "Химик-биолог": {
+      "message": ["edit_menu", "*"],
+      "next": "edit_menu"
+    },
+    "Программист": {
+      "extra": ["#Template", "success"],
+      "message": ["edit_menu", "*"],
+      "next": "edit_menu"
+    },
+    "Копирайтер": {
+      "message": ["edit_menu", "*"],
+      "next": "edit_menu"
+    },
+    "Дизайнер": {
+      "message": ["edit_menu", "*"],
+      "next": "edit_menu"
+    },
+    "/skip": {
+      "message": ["edit_menu", "*"],
+      "next": "edit_menu"
+    },
+    "*": {
+      "message": "Выберите специальность из списка (если нет нажмите, \"Пропустить\")",
+      "next": "edit_job2"
+    },
+    "#KeyboardButtons": [
+      {
+        "text": "Инженер",
+        "command": "Инженер"
+      },
+      {
+        "text": "Химик-биолог",
+        "command": "Химик-биолог"
+      },
+      {
+        "text": "Программист",
+        "command": "Программист"
+      },
+      {
+        "text": "Копирайтер",
+        "command": "Копирайтер"
+      },
+      {
+        "text": "Дизайнер",
+        "command": "Дизайнер"
+      },
+      {
+        "text": "Пропустить",
+        "command": "/skip"
+      }
+    ]
+  },
+
+
 
   "faq_menu": {
     "/leave": {
-      "message_link": ["registered", "*"],
+      "message": ["AUTOMATIC", "*"],
       "next": "AUTOMATIC"
     },
     "Пример вопроса 1": {
@@ -293,15 +539,15 @@
     "#FileHandler": {
       "success_message": "Файл успешно загружен",
       "fail_message": "Файл не был загружен. Проверьте что вы загрузили именно .pdf формат",
-      "message_link": ["#Template", "all"],
+      "message": ["#Template", "all"],
       "next": "upload_menu"
     },
     "/leave": {
-      "message_link": ["registered", "*"],
+      "message": ["registered", "*"],
       "next": "registered"
     },
     "*": {
-      "message_link": ["#Template", "all"],
+      "message": ["#Template", "all"],
       "next": "upload_menu"
     },
     "#KeyboardButtons": [
@@ -316,15 +562,15 @@
 
   "suggestion_menu": {
     "/new_suggestion": {
-      "message_link": ["suggestion1", "*"],
+      "message": ["suggestion1", "*"],
       "next": "suggestion1"
     },
     "/my_suggestions": {
-      "message_link": ["user_suggestions", "*"],
+      "message": ["user_suggestions", "*"],
       "next": "user_suggestions"
     },
     "/leave": {
-      "message_link": ["registered", "*"],
+      "message": ["registered", "*"],
       "next": "registered"
     },
     "*": {
@@ -352,11 +598,11 @@
       "all": "Отправьте сюда вопрос. Он будет анонимно отправлен модератору"
     },
     "Соревнования": {
-      "message_link": ["#Template", "all"],
+      "message": ["#Template", "all"],
       "next": "suggestion2"
     },
     "Другое": {
-      "message_link": ["#Template", "all"],
+      "message": ["#Template", "all"],
       "next": "suggestion2"
     },
     "*": {
@@ -385,11 +631,11 @@
   "user_suggestions": {
     "#": {
       "user_chat_message": "Ваше предложение [%theme% #%id%]:\n\n%text%",
-      "message_link": ["suggestion_menu", "*"],
+      "message": ["suggestion_menu", "*"],
       "next": "suggestion_menu"
     },
     "/cancel": {
-      "message_link": ["suggestion_menu", "*"],
+      "message": ["suggestion_menu", "*"],
       "next": "suggestion_menu"
     },
     "*": {
@@ -409,7 +655,7 @@
 
   "question_menu": {
     "/new_question": {
-      "message_link": ["question1", "*"],
+      "message": ["question1", "*"],
       "next": "question1"
     },
     "/my_questions": {
@@ -417,7 +663,7 @@
       "next": "user_questions"
     },
     "/leave": {
-      "message_link": ["registered", "*"],
+      "message": ["registered", "*"],
       "next": "registered"
     },
     "*": {
@@ -445,19 +691,19 @@
       "success": "Отправьте сюда вопрос. Он будет анонимно отправлен модератору"
     },
     "Соревнования": {
-      "message_link": ["#Template", "success"],
+      "message": ["#Template", "success"],
       "next": "question2"
     },
     "Команды": {
-      "message_link": ["#Template", "success"],
+      "message": ["#Template", "success"],
       "next": "question2"
     },
     "Регистрация": {
-      "message_link": ["#Template", "success"],
+      "message": ["#Template", "success"],
       "next": "question2"
     },
     "Другое": {
-      "message_link": ["#Template", "success"],
+      "message": ["#Template", "success"],
       "next": "question2"
     },
     "*": {
@@ -493,11 +739,11 @@
 
   "user_questions": {
     "#": {
-      "message_link": ["user_question1", "*"],
+      "message": ["user_question1", "*"],
       "next": "user_question1"
     },
     "/cancel": {
-      "message_link": ["question_menu", "*"],
+      "message": ["question_menu", "*"],
       "next": "question_menu"
     },
     "*": {
@@ -519,11 +765,11 @@
     },
     "/close": {
       "extra": "Выпрос успешно закрыт",
-      "message_link": ["question_menu", "*"],
+      "message": ["question_menu", "*"],
       "next": "question_menu"
     },
     "/cancel": {
-      "message_link": ["user_questions", "*"],
+      "message": ["user_questions", "*"],
       "next": "user_questions"
     },
     "*": {
@@ -547,7 +793,22 @@
   },
 
 
-
+  "api_problems": {
+    "user_registration": {
+      "extra": "Извините, что-то пошло не так:\n%error%\n\nОтправьте это сообщение нам на почту чтобы мы могли разобраться в чём проблема",
+      "message": ["not_registered", "*"],
+      "next": "not_registered"
+    },
+    "user_login": {
+      "extra": "Мы не смогли найти ваш аккаунт в нашей базе, проверьте правильность введённых данных",
+      "message": ["not_registered", "*"],
+      "next": "not_registered"
+    },
+    "*": {
+      "message": "Что-то пошло не так, мы доложили об этом техническому специалисту. Если вы были зарегестрированы, то мы вернём вас в ваше состояние через какое-то время",
+      "next": "/start"
+    }
+  },
 
   "moderator_chat": {
     "#OPEN": {
@@ -572,7 +833,8 @@
 
   "*": {
     "*": {
-      "message": "Что-то пошло не так, мы доложили об этом техническому специалисту. Если вы были зарегестрированы, то мы вернём вас в ваше состояние через какое-то время",
+      "extra": "Что-то пошло не так, доложите об этом техническому специалисту. Если вы были зарегестрированы, то напишите об этом и мы вернём вас в ваше состояние через какое-то время",
+      "message": ["not_registered", "*"],
       "next": "/start"
     }
   }

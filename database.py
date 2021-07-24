@@ -11,6 +11,7 @@ __factory = None
 
 
 def global_init(conn_str: str) -> None:
+    """Connect and initialize database"""
     global __factory
 
     if __factory:
@@ -27,5 +28,6 @@ def global_init(conn_str: str) -> None:
 
 
 def create_session() -> Session:
+    """Creates session with orm.sessionmaker"""
     global __factory
     return __factory()

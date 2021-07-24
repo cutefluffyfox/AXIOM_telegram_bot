@@ -9,5 +9,6 @@
     "#InlineButtons",
     "#FileHandler",
     "#Template"
-  ]
+  ],
+  "server_error_messages": false
 }
