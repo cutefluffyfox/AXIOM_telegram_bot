@@ -157,24 +157,27 @@ class Discussion(SqlAlchemyBase):
     __tablename__ = 'discussions'
 
     id = sqlalchemy.Column(sqlalchemy.Integer, primary_key=True, nullable=False, autoincrement=True)
+    server_id = sqlalchemy.Column(sqlalchemy.Integer, unique=True, nullable=True)
     user_id = sqlalchemy.Column(sqlalchemy.Integer, sqlalchemy.ForeignKey("users.id"), nullable=False)
     theme = sqlalchemy.Column(sqlalchemy.TEXT, nullable=False)
     finished = sqlalchemy.Column(sqlalchemy.Boolean, default=False, nullable=False)
 
-    def set(self, theme: str = None, finished: bool = None):
+    def set(self, theme: str = None, finished: bool = None, server_id: int = None):
         """
         Change theme/finished. If parameter is None, it won't be changed
         :param theme: string that represents discussion's theme
         :param finished: string that represents discussion's state
         """
         with contextlib.closing(create_session()) as session:
-            logging.info(f'Set discussion {self} to ["{theme}"", {finished}]')
+            logging.info(f'Set discussion {self} to ["{theme}"", {finished}, {server_id}]')
             discussion = session.query(Discussion).filter(Discussion.id == self.id).first()
 
             if theme is not None:
                 self.theme = discussion.theme = theme
             if finished is not None:
                 self.finished = discussion.finished = finished
+            if server_id is not None:
+                self.server_id = discussion.server_id = server_id
 
             session.commit()
 
@@ -202,6 +205,13 @@ class Discussion(SqlAlchemyBase):
         """:return [Dialog(**kwargs), Dialog(**kwargs), ...] by self.id AND by dialog.moderator == False or None if zero dialogs are found"""
         with contextlib.closing(create_session()) as session:
             return session.query(Dialog).filter(Dialog.discussion_id == self.id, Dialog.moderator == False).all()
+
+    def delete(self):
+        with contextlib.closing(create_session()) as session:
+            session.query(Discussion).filter(Discussion.id == self.id).delete()
+
+            session.commit()
+
 
     @staticmethod
     def add(user_id: int, theme: str):
@@ -244,6 +254,7 @@ class Dialog(SqlAlchemyBase):
 
     id = sqlalchemy.Column(sqlalchemy.Integer, primary_key=True, nullable=False, autoincrement=True)
     discussion_id = sqlalchemy.Column(sqlalchemy.Integer, sqlalchemy.ForeignKey("discussions.id"))
+    server_id = sqlalchemy.Column(sqlalchemy.Integer, sqlalchemy.ForeignKey("discussions.server_id"))
     text = sqlalchemy.Column(sqlalchemy.TEXT, nullable=False)
     who = sqlalchemy.Column(sqlalchemy.Integer, nullable=False)
     time = sqlalchemy.Column(sqlalchemy.TIMESTAMP, nullable=False)
@@ -252,7 +263,7 @@ class Dialog(SqlAlchemyBase):
     moderator = sqlalchemy.Column(sqlalchemy.Boolean, default=False, nullable=False)
 
     @staticmethod
-    def add(discussion_id: int, text: str, who: int, message_id: int, bot_message_id: int, moderator: bool = None):
+    def add(discussion_id: int, text: str, who: int, message_id: int, bot_message_id: int, server_id: int, moderator: bool = None):
         """
         Add Dialog message to database
         :param discussion_id: integer that represents discussion_id
@@ -267,7 +278,8 @@ class Dialog(SqlAlchemyBase):
 
             session.add(Dialog(
                 discussion_id=discussion_id, text=text, who=who, time=datetime.now(),
-                message_id=message_id, bot_message_id=bot_message_id, moderator=moderator)
+                message_id=message_id, bot_message_id=bot_message_id, moderator=moderator,
+                server_id=server_id)
             )
 
             session.commit()
@@ -281,6 +293,16 @@ class Dialog(SqlAlchemyBase):
         """
         with contextlib.closing(create_session()) as session:
             return session.query(Dialog).filter(Dialog.bot_message_id == bot_message_id, Dialog.moderator == False).first()
+
+    @staticmethod
+    def get(dialog_id: int):
+        """
+        Gets Dialog from database by dialog_id
+        :param dialog_id: integer that represents dialog_id
+        :return Dialog(**kwargs) by dialog_id or None if id is invalid
+        """
+        with contextlib.closing(create_session()) as session:
+            return session.query(Dialog).filter(Dialog.id == dialog_id).first()
 
     def __repr__(self):
         return f'Dialog(discussion_id={self.discussion_id}, who={self.who}, moderator={self.moderator})'
@@ -299,7 +321,6 @@ class Suggestion(SqlAlchemyBase):
         Change theme/text. If parameter is None, it won't be changed
         :param theme: string that represents suggestion's theme
         :param text: string that represents user message
-        :return:
         """
         with contextlib.closing(create_session()) as session:
             logging.info(f'Set discussion {self} to ["{theme}", "{text[:20]}..."]')
@@ -318,7 +339,6 @@ class Suggestion(SqlAlchemyBase):
         Add Suggestion to database
         :param user_id: integer that represents user telegram id
         :param theme: string that represents suggestion's theme
-        :return:
         """
         with contextlib.closing(create_session()) as session:
             logging.info(f'Add Suggestion(user_id={user_id}, theme="{theme}") to database')
@@ -348,3 +368,116 @@ class Suggestion(SqlAlchemyBase):
     def __repr__(self):
         return f'Suggestion(user_id={self.user_id}, theme="{self.theme})"'
 
+
+class Team(SqlAlchemyBase):
+    __tablename__ = 'teams'
+
+    id = sqlalchemy.Column(sqlalchemy.Integer, primary_key=True, nullable=False, autoincrement=True)
+    chat_id = sqlalchemy.Column(sqlalchemy.BigInteger, unique=True, nullable=False)
+    owner_id = sqlalchemy.Column(sqlalchemy.Integer, sqlalchemy.ForeignKey("users.id"), nullable=False)
+    competition_id = sqlalchemy.Column(sqlalchemy.Integer, nullable=False)
+    title = sqlalchemy.Column(sqlalchemy.TEXT, nullable=True)
+    description = sqlalchemy.Column(sqlalchemy.TEXT, nullable=True)
+
+    def set(self, title: str = None, description: str = None, chat_id: int = None):
+        with contextlib.closing(create_session()) as session:
+            logging.info(f'Set Team {self} to ["{title}", "{description}", {chat_id}]')
+            team = session.query(Team).filter(Team.id == self.id).first()
+
+            if chat_id is not None:
+                self.chat_id = team.chat_id = chat_id
+            if title is not None:
+                self.title = team.title = title
+            if description is not None:
+                self.description = team.description = description
+
+            session.commit()
+
+    def user_in_team(self, user_id: int) -> bool:
+        with contextlib.closing(create_session()) as session:
+            return session.query(Member).filter(Member.chat_id == self.chat_id, Member.user_id == user_id).first()
+
+    @staticmethod
+    def add(chat_id: int, owner_id: int, competition_id: int):
+        with contextlib.closing(create_session()) as session:
+            logging.info(f'Add Team(chat_id={chat_id}, owner_id={owner_id}, competition_id={competition_id}) to database')
+            session.add(Team(chat_id=chat_id, owner_id=owner_id, competition_id=competition_id))
+            session.commit()
+
+    @staticmethod
+    def get(chat_id: int):
+        with contextlib.closing(create_session()) as session:
+            return session.query(Team).filter(Team.chat_id == chat_id).first()
+
+    @staticmethod
+    def get_members(chat_id: int):
+        with contextlib.closing(create_session()) as session:
+            return session.query(Member).filter(Member.chat_id == chat_id).all()
+
+    @staticmethod
+    def get_all_chats():
+        with contextlib.closing(create_session()) as session:
+            return session.query(Team.chat_id).all()
+
+    @staticmethod
+    def get_all_user_chats(user_id: int):
+        with contextlib.closing(create_session()) as session:
+            return session.query(Team).filter(Team.owner_id == user_id).all()
+
+    @staticmethod
+    def get_current_user_chats(user_id: int):
+        with contextlib.closing(create_session()) as session:
+            return session.query(Team).filter(Team.owner_id == user_id, Team.description == None).first()
+
+    def __repr__(self):
+        return f'Team(chat_id={self.chat_id}, owner_id={self.owner_id}, title="{self.title}")'
+
+
+class Member(SqlAlchemyBase):
+    __tablename__ = 'members'
+
+    id = sqlalchemy.Column(sqlalchemy.Integer, primary_key=True, nullable=False, autoincrement=True)
+    chat_id = sqlalchemy.Column(sqlalchemy.BigInteger, sqlalchemy.ForeignKey("teams.chat_id"), nullable=False)
+    user_id = sqlalchemy.Column(sqlalchemy.Integer, sqlalchemy.ForeignKey("users.id"), nullable=False)
+
+    @staticmethod
+    def add(chat_id: int, user_id: int):
+        with contextlib.closing(create_session()) as session:
+            logging.info(f'Add Member(chat_id={chat_id}, user_id={user_id}) to database')
+            session.add(Member(chat_id=chat_id, user_id=user_id))
+            session.commit()
+
+    def __repr__(self):
+        return f'Member(chat_id={self.chat_id}, user_id={self.user_id})'
+
+
+class Application(SqlAlchemyBase):
+    __tablename__ = 'applications'
+
+    id = sqlalchemy.Column(sqlalchemy.Integer, primary_key=True, nullable=False, autoincrement=True)
+    user_id = sqlalchemy.Column(sqlalchemy.Integer, sqlalchemy.ForeignKey("users.id"), nullable=False)
+    chat_id = sqlalchemy.Column(sqlalchemy.BigInteger, sqlalchemy.ForeignKey("teams.chat_id"), nullable=False)
+    poll_id = sqlalchemy.Column(sqlalchemy.Integer, nullable=False)
+    accepted = sqlalchemy.Column(sqlalchemy.Boolean, nullable=True)
+
+    def set(self, accepted: bool):
+        with contextlib.closing(create_session()) as session:
+            logging.info(f'Set Application {self} to [{accepted}]')
+            application = session.query(Application).filter(Application.id == self.id).first()
+            self.accepted = application.accepted = accepted
+            session.commit()
+
+    @staticmethod
+    def add(chat_id: int, user_id: int, poll_id: int):
+        with contextlib.closing(create_session()) as session:
+            logging.info(f'Add Application(chat_id={chat_id}, user_id={user_id}, poll_id={poll_id}) to database')
+            session.add(Application(chat_id=chat_id, user_id=user_id, poll_id=poll_id))
+            session.commit()
+
+    @staticmethod
+    def get(user_id: int, chat_id: int):
+        with contextlib.closing(create_session()) as session:
+            return session.query(Application).filter(Application.user_id == user_id, Application.chat_id == chat_id).first()
+
+    def __repr__(self):
+        return f'Application(chat_id={self.chat_id}, user_id={self.user_id}, accepted={self.accepted})'

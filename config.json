@@ -1,14 +1,27 @@
 {
   "waiting_time": 1200,
-  "moderator_chat": -521111351,
-  "admin_chat": -521111351,
+  "poll_life_time": 10,
+  "moderator_chat": -1001150148217,
+  "admin_chat": -1001150148217,
   "suggestions_limit": 7,
   "restricted_messages": [
     "#",
     "#KeyboardButtons",
     "#InlineButtons",
     "#FileHandler",
-    "#Template"
+    "#Template",
+    "#Banned"
   ],
-  "server_error_messages": false
+  "bot_admin_access": [
+    ["status", "administrator"],
+    ["can_manage_chat", true],
+    ["can_change_info", true],
+    ["can_delete_messages", true],
+    ["can_invite_users", true],
+    ["can_restrict_members", true],
+    ["can_pin_messages", true],
+    ["can_promote_members", true],
+    ["can_manage_voice_chats", true]
+  ],
+  "server_error_messages": true
 }

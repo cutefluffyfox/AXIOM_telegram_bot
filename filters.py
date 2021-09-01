@@ -1,6 +1,6 @@
 from aiogram.types import Message
 
-from models import User
+from models import User, Team
 
 
 def user_not_in_database(message: Message) -> bool:
@@ -52,4 +52,19 @@ def is_login_menu(message: Message) -> bool:
 def is_edit_menu(message: Message) -> bool:
     """Returns True when 'edit' in User.state"""
     return 'edit' in User.get(message.from_user.id).state
+
+
+def is_join_menu(message: Message) -> bool:
+    """Returns True when 'join' in User.state"""
+    return 'join' in User.get(message.from_user.id).state
+
+
+def is_create_menu(message: Message) -> bool:
+    """Returns True when 'create' in User.state"""
+    return 'create' in User.get(message.from_user.id).state
+
+
+def is_team_chat(message: Message) -> bool:
+    """Return True when message from team chat"""
+    return (message.chat.id,) in Team.get_all_chats()
 

@@ -248,6 +248,10 @@
       "message": ["edit_menu", "*"],
       "next": "edit_menu"
     },
+    "/join": {
+      "message": ["join", "*"],
+      "next": "join"
+    },
     "/upload": {
       "message": ["upload_menu", "*"],
       "next": "upload_menu"
@@ -274,6 +278,10 @@
         "command": "/suggest"
       },
       {
+        "text": "Присоединиться/Создать команду",
+        "command": "/join"
+      },
+      {
         "text": "Изменить свои данные",
         "command": "/edit"
       },
@@ -284,6 +292,140 @@
       {
         "text": "faq",
         "command": "/faq"
+      }
+    ]
+  },
+
+  "join": {
+    "/join": {
+      "message": ["join_competitions", "*"],
+      "next": "join_competitions"
+    },
+    "/create": {
+      "message": ["create_competitions", "*"],
+      "next": "create_competitions"
+    },
+    "*": {
+      "message": "Выберите что хотите сделать",
+      "next": "join"
+    },
+    "#KeyboardButtons": [
+      {
+        "text": "Присоединиться в команду",
+        "command": "/join"
+      },
+      {
+        "text": "Создать команду",
+        "command": "/create"
+      }
+    ]
+  },
+
+  "create_competitions": {
+    "#": {
+      "message": ["create_team1", "*"],
+      "next": "create_team1"
+    },
+    "/cancel": {
+      "message": ["registered", "*"],
+      "next": "registered"
+    },
+    "*": {
+      "message": "Выберите соревнование:",
+      "next": "create_competitions"
+    },
+    "#InlineButtons": [
+      {
+        "text": "Выйти",
+        "command": "/cancel"
+      }
+    ]
+  },
+
+  "create_team1": {
+    "#Template": {
+      "bot_joined": "Бот успешно добавлен в группу, теперь вам надо дать ему права администратора",
+      "success": "Введите название команды",
+      "success_next": "create_team2",
+      "fail_no_group": "Вы не добавили бота в группу",
+      "fail_no_rights": "Вам надо дать боту следующие права в группе:\n%rights%"
+    },
+    "/next": {
+      "message": "AUTOMATIC",
+      "next": "AUTOMATIC"
+    },
+    "/leave": {
+      "message": ["create_competitions", "*"],
+      "next": "create_competitions"
+    },
+    "*": {
+      "message": "Чтобы создать команду, вам понадобится создать чат команды. Создайте чат и добавьте туда бота (дав ему полные права администратора)",
+      "next": "create_team1"
+    },
+    "#KeyboardButtons": [
+      {
+        "text": "Далее",
+        "command": "/next"
+      }
+    ]
+  },
+
+  "create_team2": {
+    "*": {
+      "message": "Введите описание команды",
+      "next": "create_team3"
+    }
+  },
+
+  "create_team3": {
+    "*": {
+      "extra": "Группа успешно создана!",
+      "message": ["registered", "*"],
+      "next": "registered"
+    }
+  },
+
+
+
+  "join_competitions": {
+    "#": {
+      "message": ["join_team", "*"],
+      "next": "join_team"
+    },
+    "/cancel": {
+      "message": ["registered", "*"],
+      "next": "registered"
+    },
+    "*": {
+      "message": "Выберите соревнование:",
+      "next": "join_competitions"
+    },
+    "#InlineButtons": [
+      {
+        "text": "Выйти",
+        "command": "/leave"
+      }
+    ]
+  },
+
+  "join_team": {
+    "#": {
+      "extra": "Ваша заявка в команду '%title%' отправлена",
+      "message": ["join_team", "*"],
+      "next": "join_team"
+    },
+    "/leave": {
+      "message": ["registered", "*"],
+      "next": "registered"
+    },
+    "*": {
+      "message": "Выберите команду:",
+      "next": "join_team"
+    },
+    "#InlineButtons": [
+      {
+        "text": "Выйти",
+        "command": "/leave"
       }
     ]
   },
@@ -511,6 +653,14 @@
       "message": "Ответ на вопрос 2",
       "next": "faq_menu"
     },
+    "Пример вопроса 3": {
+      "message": "Ответ на вопрос 3",
+      "next": "faq_menu"
+    },
+    "Пример вопроса 4": {
+      "message": "Ответ на вопрос 4",
+      "next": "faq_menu"
+    },
     "*": {
       "message": "Выберите тему вопроса либо выйдите отправив /leave",
       "next": "faq_menu"
@@ -523,6 +673,14 @@
       {
         "text": "Пример вопроса 2",
         "command": "Пример вопроса 2"
+      },
+      {
+        "text": "Пример вопроса 3",
+        "command": "Пример вопроса 3"
+      },
+      {
+        "text": "Пример вопроса 4",
+        "command": "Пример вопроса 4"
       },
       {
         "text": "Выйти",
@@ -595,7 +753,7 @@
 
   "suggestion1": {
     "#Template": {
-      "all": "Отправьте сюда вопрос. Он будет анонимно отправлен модератору"
+      "all": "Отправьте сюда пожелание/предложение. Оно будет отправлено администраторам. Не переживайте если в ближаёшее время с вами свяжутся чтобы обсудить идею"
     },
     "Соревнования": {
       "message": ["#Template", "all"],
@@ -649,7 +807,6 @@
         }
     ]
   },
-
 
 
 
@@ -792,10 +949,40 @@
     ]
   },
 
+  "team_chat": {
+    "new_member": {
+      "message1": "Новый запрос на вступление в команду: %user_id%\nПрофиль: %job%\nAXIOM_ID: %AXIOM_ID%",
+      "message2_title": "Добавить в команду?",
+      "message3_waiting": "Голосование завершится %time%\nИтог: Идет голосование",
+      "message3_accepted": "Голосование завершилось\nИтог: Заявка принята",
+      "message3_denied": "Голосование завершилось\nИтог: Заявка отклонена",
+      "user_accepted": "Ваша заявка в команду %title% принята! Ссылка в чат %link%",
+      "user_denied": "Ваша заявка в команду %title% отклонена. Не переживайте, у вас есть ещё возможность попасть в эту команду, удачи!",
+      "user_done": "Вы не можете больше подать заявку в команду %title%. Вы либо уже подавали такое заявление, либо вас уже отклонили"
+    },
+    "commands": {
+      "change_title": "/change_title",
+      "change_title_message": "Название успешно изменено",
+      "change_description": "/change_desc",
+      "change_description_message": "Описание успешно изменено",
+      "invite": "/invite",
+      "invite_message": "Приглашение в команду успешно отправлено",
+      "user_invitation_invalid_id": "Не удалось найти пользователя в айди %axiom_id% в базе данных, перепроверьте правильность введённых данных",
+      "user_invitation": "Вас пригласил %telegram_id% в команду %title%!\nЧтобы присоединиться к их команде переходите по ссылке:\n%link%"
+    },
+    "*": {
+      "message": "Что-то пошло совсем не так, напишите нам на почту чтобы мы могли разобраться в чём беда. Если вы были зарегестрированы, то мы вернём вас в ваше состояние через какое-то время",
+      "next": "start"
+    }
+  },
+
 
   "api_problems": {
+    "#Template": {
+      "error": "Извините, что-то пошло не так:\n%error%\n\nОтправьте это сообщение нам на почту чтобы мы могли разобраться в чём проблема"
+    },
     "user_registration": {
-      "extra": "Извините, что-то пошло не так:\n%error%\n\nОтправьте это сообщение нам на почту чтобы мы могли разобраться в чём проблема",
+      "extra": ["#Template", "error"],
       "message": ["not_registered", "*"],
       "next": "not_registered"
     },
@@ -804,9 +991,24 @@
       "message": ["not_registered", "*"],
       "next": "not_registered"
     },
+    "add_team": {
+      "extra": ["#Template", "error"],
+      "message": ["question_menu", "*"],
+      "next": "question_menu"
+    },
+    "edit_info": {
+      "extra": "Вы неверно заполнили поле:\n%error%",
+      "message": ["edit_menu", "*"],
+      "next": "edit_menu"
+    },
+    "add_discussion": {
+      "extra": ["#Template", "error"],
+      "message": ["question_menu", "*"],
+      "next": "question_menu"
+    },
     "*": {
-      "message": "Что-то пошло не так, мы доложили об этом техническому специалисту. Если вы были зарегестрированы, то мы вернём вас в ваше состояние через какое-то время",
-      "next": "/start"
+      "message": "Что-то пошло совсем не так, напишите нам на почту чтобы мы могли разобраться в чём беда. Если вы были зарегестрированы, то мы вернём вас в ваше состояние через какое-то время",
+      "next": "start"
     }
   },
 
@@ -827,7 +1029,7 @@
     },
     "*": {
       "message": "Что-то пошло не так, мы доложили об этом техническому специалисту. Если вы были зарегестрированы, то мы вернём вас в ваше состояние через какое-то время",
-      "next": "/start"
+      "next": "start"
     }
   },
 
@@ -835,7 +1037,7 @@
     "*": {
       "extra": "Что-то пошло не так, доложите об этом техническому специалисту. Если вы были зарегестрированы, то напишите об этом и мы вернём вас в ваше состояние через какое-то время",
       "message": ["not_registered", "*"],
-      "next": "/start"
+      "next": "start"
     }
   }
 }

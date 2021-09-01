@@ -1,6 +1,7 @@
 import logging
 import os
 import asyncio
+from datetime import datetime, timedelta
 
 import dotenv
 from aiogram import Bot, Dispatcher, executor
@@ -8,11 +9,13 @@ from aiogram.types import Message, CallbackQuery, ContentType
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.types.reply_keyboard import ReplyKeyboardRemove
+from aiogram.types.chat_member_updated import ChatMemberUpdated
+from aiogram.utils import markdown
 
-import api_v1 as api  # TODO: decide where API should be located (in sqlalchemy or in bot)
+import api_v1 as api
 import database
 import filters
-from models import User, UserInfo, Discussion, Dialog, Suggestion
+from models import User, UserInfo, Discussion, Dialog, Suggestion, Team, Application, Member
 from bot_functions import (get_reply, is_unknown_reply, button_to_command, get_config, has_inline_buttons,
                            has_keyboard_buttons, get_raw_button, parse_link)
 
@@ -86,15 +89,15 @@ def fill_user_info(keyboard: ReplyKeyboardMarkup or InlineKeyboardMarkup or Repl
                 button['text'] = button['text'].replace('%job%', user_info.job)
 
 
-async def send_answer(message: Message or CallbackQuery, reply: dict, keyboard: ReplyKeyboardRemove or InlineKeyboardMarkup or ReplyKeyboardMarkup):
+async def send_answer(chat_id: int, reply: dict, keyboard: ReplyKeyboardRemove or InlineKeyboardMarkup or ReplyKeyboardMarkup = ReplyKeyboardRemove()):
     """Sends extra and message"""
     if reply.get('extra') is not None:
-        await message.answer(reply['extra'])
-    await message.answer(reply['message'], reply_markup=keyboard)
+        await bot.send_message(chat_id, reply['extra'])
+    await bot.send_message(chat_id, reply['message'], reply_markup=keyboard, parse_mode=reply.get('parse_mode'))
 
 
 async def close_discussion_automatically(discussion_id: int):
-    """Sets timer for confin.json -> waiting_time seconds & closes menu if no replies was sent"""
+    """Sets timer for config.json -> waiting_time seconds & closes menu if no replies was sent"""
     discussion: Discussion = Discussion.get(discussion_id)
 
     start_time = discussion.get_last_message().time
@@ -120,6 +123,43 @@ async def close_discussion_automatically(discussion_id: int):
         await bot.send_message(discussion.user_id, user_chat_message, reply_to_message_id=discussion.get_last_question().message_id)
 
 
+async def close_poll_automatically(chat_id: int, message_id: int, edit_message_id: int, user_id: int):
+    await asyncio.sleep(get_config()['poll_life_time'])  # sleeping
+    res = await bot.stop_poll(chat_id, message_id)
+    yes, no = res['options']
+
+    team = Team.get(chat_id)
+    reply_messages = get_reply('team_chat', 'new_member')
+    team_chat_message = reply_messages['message3_accepted'] if yes['voter_count'] > no['voter_count'] else reply_messages['message3_denied']
+    user_chat_message = reply_messages['user_accepted'] if yes['voter_count'] > no['voter_count'] else reply_messages['user_denied']
+    user_chat_message = user_chat_message.replace('%title%', team.title)
+    user_chat_message = user_chat_message.replace('%link%', (await bot.create_chat_invite_link(chat_id, member_limit=1))['invite_link'])
+
+    await bot.edit_message_text(team_chat_message, chat_id, edit_message_id)
+    await bot.send_message(user_id, user_chat_message)
+
+
+def send_error_message(reply: dict, keyboard: InlineKeyboardMarkup or ReplyKeyboardMarkup or ReplyKeyboardRemove, response: dict, problem: str) -> (dict, InlineKeyboardMarkup or ReplyKeyboardMarkup or ReplyKeyboardRemove):
+    if get_config()['server_error_messages'] and (not response['success']):
+        text = ''
+        if response['data'] is not None:
+            for error in response['data']:
+                text += f"{error['path']} : {error['error']}\n"
+        if (response.get('error') is not None) and (response['error'].get('message') is not None):
+            text += "Server message: " + response['error']['message']
+        reply = get_reply('api_problems', problem)
+        reply['extra'] = reply['extra'].replace('%error%', text)
+        keyboard = get_markup('api_problems', problem)
+    return reply, keyboard
+
+
+@dp.message_handler(content_types=["migrate_to_chat_id"])
+async def group_upgrade_to(message: Message):  # when group migrate from group to supergroup
+    team: Team = Team.get(message.chat.id)
+    if team is not None:
+        team.set(chat_id=message.migrate_to_chat_id)
+
+
 @dp.message_handler(lambda msg: filters.is_group_chat(msg), commands=['get_chat_id'])
 async def send_chat_id(message: Message):
     """Special handler for group chat, that helps getting chat_id for config chat"""
@@ -129,32 +169,70 @@ async def send_chat_id(message: Message):
 @dp.message_handler(lambda msg: filters.is_group_chat(msg))
 async def group_chat(message: Message):
     """Group chat handler (works only in moderator_chat)"""
-    if message.chat.id != get_config()['moderator_chat']:  # bot can only read MODERATOR chat
-        return
-    if message.reply_to_message is None:  # only read replies
-        return
-    bot_message_id = message.reply_to_message.message_id
-    question: Dialog = Dialog.get_question(bot_message_id)
-    if question is None:  # if it's not random reply
-        return
-    discussion = Discussion.get(question.discussion_id)
 
-    Dialog.add(question.discussion_id, message.text, message.from_user.id, message.message_id, bot_message_id, moderator=True)
-    moderator_chat_message: str = get_reply('moderator_chat', '#WAITING')['moderator_chat_message']
-    moderator_chat_message = moderator_chat_message.replace('%theme%', discussion.theme)
-    moderator_chat_message = moderator_chat_message.replace('%id%', str(discussion.id))
-    moderator_chat_message = moderator_chat_message.replace('%text%', question.text)
+    if message.chat.id == get_config()['moderator_chat']:  # bot can only read MODERATOR chat
+        if message.reply_to_message is None:  # only read replies
+            return
+        bot_message_id = message.reply_to_message.message_id
+        question: Dialog = Dialog.get_question(bot_message_id)
+        if question is None:  # if it's not random reply
+            return
+        discussion = Discussion.get(question.discussion_id)
 
-    user_chat_message: str = get_reply('moderator_chat', '#WAITING')['user_chat_message']
-    user_chat_message = user_chat_message.replace('%theme%', discussion.theme)
-    user_chat_message = user_chat_message.replace('%id%', str(discussion.id))
-    user_chat_message = user_chat_message.replace('%text%', message.text)
+        Dialog.add(question.discussion_id, message.text, message.from_user.id, message.message_id, bot_message_id, moderator=True)
+        moderator_chat_message: str = get_reply('moderator_chat', '#WAITING')['moderator_chat_message']
+        moderator_chat_message = moderator_chat_message.replace('%theme%', discussion.theme)
+        moderator_chat_message = moderator_chat_message.replace('%id%', str(discussion.id))
+        moderator_chat_message = moderator_chat_message.replace('%text%', question.text)
 
-    await bot.send_message(question.who, user_chat_message, reply_to_message_id=question.message_id)
-    if (message.reply_to_message.text != moderator_chat_message) and (not discussion.finished):  # if messages are not the same AND discussion not finished
-        await bot.edit_message_text(moderator_chat_message, get_config()['moderator_chat'], question.bot_message_id)
+        user_chat_message: str = get_reply('moderator_chat', '#WAITING')['user_chat_message']
+        user_chat_message = user_chat_message.replace('%theme%', discussion.theme)
+        user_chat_message = user_chat_message.replace('%id%', str(discussion.id))
+        user_chat_message = user_chat_message.replace('%text%', message.text)
 
-    asyncio.get_event_loop().create_task(close_discussion_automatically(discussion.id))  # starts delete timer in another thread
+        await bot.send_message(question.who, user_chat_message, reply_to_message_id=question.message_id)
+        api.add_dialog(question.who, question.server_id, message.text, datetime.now(), message.from_user.id)
+
+        if (message.reply_to_message.text != moderator_chat_message) and (not discussion.finished):  # if messages are not the same AND discussion not finished
+            await bot.edit_message_text(moderator_chat_message, get_config()['moderator_chat'], question.bot_message_id)
+
+        asyncio.get_event_loop().create_task(close_discussion_automatically(discussion.id))  # starts delete timer in another thread
+
+    elif (message.chat.id,) in Team.get_all_chats():
+        team: Team = Team.get(message.chat.id)
+        if team.owner_id != message.from_user.id:  # only owner can change group info
+            return
+        chat = await bot.get_chat(message.chat.id)
+        commands = get_reply('team_chat', 'commands')
+        if message.text.startswith(commands['change_title']):
+            team.set(title=message.text[len(commands['change_title']) + 1:])
+            await chat.set_title(message.text[len(commands['change_title']) + 1:])
+            await message.reply(commands['change_title_message'])
+
+        elif message.text.startswith(commands['change_description']):
+            team.set(description=message.text[len(commands['change_description']) + 1:])
+            await chat.set_description(message.text[len(commands['change_description']) + 1:])
+            await message.reply(commands['change_description_message'])
+
+        elif message.text.startswith(commands['invite']):
+            axiom_id = message.text[len(commands['invite']) + 1:]
+
+            res = api.get_user_by_axiom_id(axiom_id)
+            if not res['success']:
+                chat_message = chat['user_invitation_invalid_id']
+                chat_message = chat_message.replace('%axiom_id%', axiom_id)
+                await message.reply(chat_message)
+                return
+
+            # TODO
+            user_id = int(res['data']['telegramId'])
+
+            user_message: str = commands['user_invitation']
+            user_message = user_message.replace('%title%', team.title)
+            user_message = user_message.replace('%link%', (await bot.create_chat_invite_link(message.chat.id, member_limit=1))['invite_link'])
+
+            await message.reply(commands['invite_message'])
+            await bot.send_message(user_id, user_message)
 
 
 @dp.message_handler(lambda msg: filters.user_not_in_database(msg))
@@ -169,7 +247,7 @@ async def add_user_to_database(message: Message):
     keyboard = get_markup(user.state, message.text)
 
     user.set(state=reply['next'])
-    await send_answer(message=message, reply=reply, keyboard=keyboard)
+    await send_answer(chat_id=message.chat.id, reply=reply, keyboard=keyboard)
 
 
 @dp.message_handler(lambda msg: filters.is_question_menu(msg))
@@ -204,6 +282,13 @@ async def question_menu(message: Message):
             discussion = Discussion.get_discussions(message.from_user.id)[-1]
             user.set(cache=str(discussion.id))  # saves discussion_id in cache for question2 state
 
+            response = api.add_discussion(discussion)
+            if not response['success']:
+                reply, keyboard = send_error_message(reply, keyboard, response, 'add_discussion')
+                discussion.delete()
+            else:
+                discussion.set(server_id=response['data']['dialogId'])
+
     elif user.state == 'question2':
         discussion = Discussion.get(int(user.cache))
         moderator_chat_message: str = get_reply('moderator_chat', '#OPEN')['moderator_chat_message']
@@ -211,7 +296,9 @@ async def question_menu(message: Message):
         moderator_chat_message = moderator_chat_message.replace('%id%', str(discussion.id))
         moderator_chat_message = moderator_chat_message.replace('%text%', message.text)
         bot_message = await bot.send_message(get_config()['moderator_chat'], moderator_chat_message)
-        Dialog.add(discussion.id, message.text, message.from_user.id, message.message_id, bot_message.message_id, moderator=False)
+        Dialog.add(discussion.id, message.text, message.from_user.id, message.message_id, bot_message.message_id, discussion.server_id, moderator=False)
+        api.add_dialog(message.from_user.id, discussion.server_id, message.text, datetime.now())
+
         user.set(cache='')
 
     elif user.state == 'user_question1':
@@ -236,7 +323,7 @@ async def question_menu(message: Message):
                 await bot.edit_message_text(moderator_chat_message, get_config()['moderator_chat'], question.bot_message_id)
 
     user.set(state=reply['next'])
-    await send_answer(message=message, reply=reply, keyboard=keyboard)
+    await send_answer(chat_id=message.chat.id, reply=reply, keyboard=keyboard)
 
 
 @dp.callback_query_handler(lambda msg: filters.is_question_menu(msg))
@@ -259,7 +346,206 @@ async def question_menu_callback(callback_query: CallbackQuery):
             keyboard = get_markup(user.state, '#', safe=False)
 
     user.set(state=reply['next'])
-    await bot.send_message(callback_query.from_user.id, reply['message'], reply_markup=keyboard)
+    await send_answer(chat_id=callback_query.from_user.id, reply=reply, keyboard=keyboard)
+
+
+@dp.message_handler(lambda msg: filters.is_join_menu(msg))
+async def join_menu(message: Message):
+    """Handler for join menu and it's subpages"""
+    user: User = User.get(message.from_user.id)
+    logging.info(f'{user} sent "{message.text}"')
+
+    button_to_command(user.state, message)
+    reply = get_reply(user.state, message.text)
+    keyboard = get_markup(user.state, message.text)
+
+    if user.state == 'join' or user.state == 'join_competitions':
+        if reply['next'] != 'join':
+            keyboard = InlineKeyboardMarkup()
+            for competition in api.get_competitions()['data']:  # Adds [name] buttons
+                keyboard.add(InlineKeyboardButton(competition['name'], callback_data=f"{competition['id']}"))
+            for button in get_reply(user.state, message.text, inline_buttons=True):  # Adds /cancel button
+                keyboard.add(InlineKeyboardButton(button['text'], callback_data=button['command']))
+    elif user.state == 'join_team':
+        keyboard = InlineKeyboardMarkup()
+        for team in api.get_teams(competition_id=int(user.cache))['data']:  # Adds [name] buttons
+            application = Application.get(user.id, team['chatId'])
+            team_ = Team.get(team['chatId'])
+            if ((application is None) or (application.accepted is not None) and application.accepted) and ((team_ is None) or (not team_.user_in_team(user.id))):
+                keyboard.add(InlineKeyboardButton(team['name'], callback_data=team['chatId']))
+        for button in get_reply(user.state, message.text, inline_buttons=True):  # Adds /cancel button
+            keyboard.add(InlineKeyboardButton(button['text'], callback_data=button['command']))
+
+    user.set(state=reply['next'])
+    await send_answer(chat_id=message.chat.id, reply=reply, keyboard=keyboard)
+
+
+@dp.callback_query_handler(lambda msg: filters.is_join_menu(msg))
+async def join_menu_callback(callback_query: CallbackQuery):
+    """Handler for join menu and it's subpages Inline buttons"""
+    user: User = User.get(callback_query.from_user.id)
+    logging.info(f'{user} pressed button "{callback_query.data}"')
+
+    reply = get_reply(user.state)
+    keyboard = get_markup(user.state, callback_query.data)
+
+    if user.state == 'join_competitions':
+        if callback_query.data == '/leave':
+            reply = get_reply(user.state, callback_query.data)
+        elif callback_query.data.lstrip('-').isdigit():  # if correct competition_id
+            user.set(cache=callback_query.data)
+            reply = get_reply(user.state, callback=True)
+
+            keyboard = InlineKeyboardMarkup()
+            for team in api.get_teams(competition_id=int(user.cache))['data']:  # Adds [name] buttons
+                application = Application.get(user.id, team['chatId'])
+                team_ = Team.get(team['chatId'])
+                if ((application is None) or (application.accepted is not None) and application.accepted) and ((team_ is None) or (not team_.user_in_team(user.id))):
+                    keyboard.add(InlineKeyboardButton(team['name'], callback_data=team['chatId']))
+            for button in get_reply(user.state, '*', inline_buttons=True):  # Adds /cancel button
+                keyboard.add(InlineKeyboardButton(button['text'], callback_data=button['command']))
+
+    elif user.state == 'join_team':
+        if callback_query.data == '/leave':
+            reply = get_reply(user.state, callback_query.data)
+        elif callback_query.data.lstrip('-').isdigit():  # if correct team_id
+            team = Team.get(int(callback_query.data))
+
+            application = Application.get(user.id, team.chat_id)
+            if (application is not None) and (not application.accepted):
+                reply['message'] = get_reply('team_chat', 'new_member')['user_done']
+                reply['next'] = user.state
+            else:
+                reply = get_reply(user.state, callback=True)
+                reply['extra'] = reply['extra'].replace('%title%', team.title)
+                keyboard = InlineKeyboardMarkup()
+                for team in api.get_teams(competition_id=int(user.cache))['data']:  # Adds [name] buttons
+                    application = Application.get(user.id, team['chatId'])
+                    team_ = Team.get(team['chatId'])
+                    if ((application is None) or (application.accepted is not None) and application.accepted) and ((team_ is None) or (not team_.user_in_team(user.id))):
+                        keyboard.add(InlineKeyboardButton(team['name'], callback_data=team['chatId']))
+                for button in get_reply(user.state, '*', inline_buttons=True):  # Adds /cancel button
+                    keyboard.add(InlineKeyboardButton(button['text'], callback_data=button['command']))
+
+                user_info = api.get_user(user)['data']
+                reply_messages = get_reply('team_chat', 'new_member')
+                team: Team = Team.get(int(callback_query.data))
+                team_chat_message = reply_messages['message1']
+                team_chat_message = team_chat_message.replace('%job%', ' & '.join(user_info['profession']))
+                team_chat_message = team_chat_message.replace('%AXIOM_ID%', user_info['axiomId'])
+                team_chat_message = team_chat_message.replace('<', '[[')  # to block all user_html inputs
+                team_chat_message = team_chat_message.replace('>', ']]')  # to block all user_html inputs
+                team_chat_message = team_chat_message.replace('%user_id%', f'<a href="tg://user?id={user.id}">{user_info["firstName"]} {user_info["lastName"]}</a>')  # in case when user has no @alias, we are notifying them
+                await bot.send_message(team.chat_id, team_chat_message, parse_mode='HTML')  # html to parse %user_id%
+
+                poll = await bot.send_poll(team.chat_id, question=reply_messages['message2_title'], options=['Да', 'Нет'], is_anonymous=False)
+
+                team_chat_message = reply_messages['message3_waiting']
+                team_chat_message = team_chat_message.replace('%time%', str((datetime.now() + timedelta(seconds=get_config()['poll_life_time'])).strftime('%m/%d/%Y, %H:%M:%S')))
+                edit_message = await bot.send_message(team.chat_id, team_chat_message)
+
+                Application.add(team.chat_id, user.id, poll.message_id)
+                asyncio.get_event_loop().create_task(close_poll_automatically(poll.chat.id, poll.message_id, edit_message.message_id, user.id))  # starts delete timer in another thread
+
+    user.set(state=reply['next'])
+    await send_answer(chat_id=callback_query.from_user.id, reply=reply, keyboard=keyboard)
+
+
+@dp.message_handler(lambda msg: filters.is_create_menu(msg))
+async def create_menu(message: Message):
+    """Handler for create menu and it's subpages"""
+    user: User = User.get(message.from_user.id)
+    logging.info(f'{user} sent "{message.text}"')
+
+    button_to_command(user.state, message)
+    reply = get_reply(user.state, message.text)
+    keyboard = get_markup(user.state, message.text)
+
+    if user.state == 'create_competitions':
+        keyboard = InlineKeyboardMarkup()
+        for competition in api.get_competitions()['data']:  # Adds [name] buttons
+            keyboard.add(InlineKeyboardButton(competition['name'], callback_data=f"{competition['id']}"))
+        for button in get_reply(user.state, message.text, inline_buttons=True):  # Adds /cancel button
+            keyboard.add(InlineKeyboardButton(button['text'], callback_data=button['command']))
+
+    elif user.state == 'create_team1':
+        if message.text == '/next':
+            teams = Team.get_all_user_chats(user.id)
+            if (len(teams) == 0) or (teams[-1].title is not None):
+                reply['message'] = get_reply(user.state, '#Template', safe=False)['fail_no_group']
+                reply['next'] = user.state
+                keyboard = get_markup(user.state, '*')
+            else:
+                required_rights = list(get_config()['bot_admin_access'])
+                rights = list(filter(lambda a: a[1], map(list, (await bot.get_chat_member(teams[-1].chat_id, BOT_TOKEN)))))[1:]
+                if rights != required_rights:
+                    reply['message'] = get_reply(user.state, '#Template', safe=False)['fail_no_rights']
+                    rights_str = ""
+                    for right in required_rights:
+                        rights_str += f"{right[0]} : {right[1]}\n"
+                    reply['message'] = reply['message'].replace('%rights%', markdown.code(rights_str))
+                    reply['next'] = user.state
+                    reply['parse_mode'] = 'MarkdownV2'
+                    keyboard = get_markup(user.state, '*')
+                else:
+                    reply['message'] = get_reply(user.state, '#Template', safe=False)['success']
+                    reply['next'] = get_reply(user.state, '#Template', safe=False)['success_next']
+
+    elif user.state == 'create_team2':
+        team: Team = Team.get_current_user_chats(user.id)
+        team.set(title=message.text)
+        chat = await bot.get_chat(team.chat_id)
+        await chat.set_title(message.text)
+
+    elif user.state == 'create_team3':
+        team: Team = Team.get_current_user_chats(user.id)
+        team.set(description=message.text)
+        chat = await bot.get_chat(team.chat_id)
+        await chat.set_description(message.text)
+        Member.add(team.chat_id, user.id)
+
+        response = api.add_team(team)
+        reply, keyboard = send_error_message(reply, keyboard, response, 'add_team')
+
+    user.set(state=reply['next'])
+    await send_answer(chat_id=message.chat.id, reply=reply, keyboard=keyboard)
+
+
+@dp.callback_query_handler(lambda msg: filters.is_create_menu(msg))
+async def create_menu_callback(callback_query: CallbackQuery):
+    """Handler for create menu and it's subpages Inline buttons"""
+    user: User = User.get(callback_query.from_user.id)
+    logging.info(f'{user} pressed button "{callback_query.data}"')
+
+    reply = get_reply(user.state)
+    keyboard = get_markup(user.state, callback_query.data)
+
+    if user.state == 'create_competitions':
+        if callback_query.data == '/cancel':
+            reply = get_reply(user.state, callback_query.data)
+        elif callback_query.data.lstrip('-').isdigit():  # if correct competition_id
+            user.set(cache=callback_query.data)
+            reply = get_reply(user.state, callback=True)
+            keyboard = get_markup(user.state, '#', safe=False)
+
+    user.set(state=reply['next'])
+    await send_answer(chat_id=callback_query.from_user.id, reply=reply, keyboard=keyboard)
+
+
+@dp.my_chat_member_handler()
+async def team_new_member(member: ChatMemberUpdated):
+    user = User.get(member.from_user.id)
+    if member.old_chat_member.status == 'left' and member.new_chat_member.status == 'member':
+
+        team: Team = Team.get_current_user_chats(user.id)
+        if member.new_chat_member.user.id == bot.id and user.state == 'create_team1' and team is None:
+            Team.add(member.chat.id, user.id, int(user.cache))
+            return
+
+        application: Application = Application.get(user.id, member.chat.id)
+        if (member.new_chat_member.user.id != user.state) and (application is not None) and (application.accepted is None):
+            application.set(accepted=True)
+            Member.add(chat_id=member.chat.id, user_id=user.id)
 
 
 @dp.message_handler(lambda msg: filters.is_suggestion_menu(msg))
@@ -311,7 +597,7 @@ async def suggestion_menu(message: Message):
         user.set(cache='')
 
     user.set(state=reply['next'])
-    await send_answer(message=message, reply=reply, keyboard=keyboard)
+    await send_answer(chat_id=message.chat.id, reply=reply, keyboard=keyboard)
 
 
 @dp.callback_query_handler(lambda msg: filters.is_suggestion_menu(msg))
@@ -414,20 +700,12 @@ async def register(message: Message):
             if message.text != '/skip' and message.text != user_info.job:  # if user decided to /skip or written same profession
                 user_info.set(job=user_info.job + ';' + message.text)
             user.set(cache='')
+            response = api.add_user(user)
 
-            # !!! API ADDITION IS UNDER DISCUSSION !!!
-            #
-            # response = api.add_user(user)
-            # if get_config()['server_error_messages'] and not response['success']:
-            #     text = ''
-            #     for error in response['data']:
-            #         text += f"{error['path']} : {error['error']}\n"
-            #     reply = get_reply('api_problems', 'user_registration')
-            #     reply['extra'] = reply['extra'].replace('%error%', text)
-            #     keyboard = get_markup('api_problems', 'user_registration')
+            reply, keyboard = send_error_message(reply, keyboard, response, 'user_registration')
 
     user.set(state=reply['next'])
-    await send_answer(message=message, reply=reply, keyboard=keyboard)
+    await send_answer(chat_id=message.chat.id, reply=reply, keyboard=keyboard)
 
 
 @dp.callback_query_handler(lambda msg: filters.is_register_menu(msg))
@@ -470,7 +748,7 @@ async def login_menu(message: Message):
         user.set(cache='')
 
     user.set(state=reply['next'])
-    await send_answer(message=message, reply=reply, keyboard=keyboard)
+    await send_answer(chat_id=message.chat.id, reply=reply, keyboard=keyboard)
 
 
 @dp.message_handler(lambda msg: filters.is_edit_menu(msg))
@@ -486,31 +764,44 @@ async def edit_menu(message: Message):
 
     if user.state == 'edit_surname':
         user_info.set(surname=message.text)
+        api.add_user(user, edit=True)
     elif user.state == 'edit_name':
         user_info.set(name=message.text)
+        api.add_user(user, edit=True)
     elif user.state == 'edit_patronymic':
         if message.text == '/skip':
             user_info.set_patronymic(patronymic=None)
         else:
             user_info.set(patronymic=message.text)
+        api.add_user(user, edit=True)
     elif user.state == 'edit_email':
+        prev = user_info.email
         user_info.set(email=message.text)
+        response = api.add_user(user, edit=True)
+        if not response['success']:
+            reply, keyboard = send_error_message(reply, keyboard, response, 'edit_info')
+            user_info.set(email=prev)
     elif user.state == 'edit_job1':
         if not is_unknown_reply(user.state, message.text):
-            user_info.set(job=message.text)
             user.set(cache=message.text)
             keyboard = get_markup(user.state, message.text, skip=(user.cache,))  # skip same profession
     elif user.state == 'edit_job2':
+        prev = user_info.job
         if is_unknown_reply(user.state, message.text):
+            user_info.set(job=user.cache)
             keyboard = get_markup(user.state, '*', skip=(user.cache,))  # skip same profession
         else:
             if message.text != '/skip' and message.text != user_info.job:  # if user decided to /skip or written same profession
                 user_info.set(job=user_info.job + ';' + message.text)
             user.set(cache='')
+        response = api.add_user(user, edit=True)
+        if not response['success']:
+            reply, keyboard = send_error_message(reply, keyboard, response, 'edit_info')
+            user_info.set(job=prev)
 
     fill_user_info(keyboard=keyboard, user_info=user_info)
     user.set(state=reply['next'])
-    await send_answer(message=message, reply=reply, keyboard=keyboard)
+    await send_answer(chat_id=message.chat.id, reply=reply, keyboard=keyboard)
 
 
 @dp.callback_query_handler(lambda msg: filters.is_edit_menu(msg))
@@ -551,7 +842,7 @@ async def faq_menu(message: Message):
         keyboard = get_markup(buttons=get_raw_button(auto_next, '#KeyboardButtons'), buttons_type='#KeyboardButtons')
 
     user.set(state=reply['next'])
-    await send_answer(message=message, reply=reply, keyboard=keyboard)
+    await send_answer(chat_id=message.chat.id, reply=reply, keyboard=keyboard)
 
 
 @dp.message_handler()
@@ -567,7 +858,7 @@ async def simple_commands(message: Message):
 
     fill_user_info(keyboard=keyboard, user_info=user_info)
     user.set(state=reply['next'])
-    await send_answer(message=message, reply=reply, keyboard=keyboard)
+    await send_answer(chat_id=message.chat.id, reply=reply, keyboard=keyboard)
 
 
 @dp.callback_query_handler()
@@ -580,7 +871,7 @@ async def simple_callback(callback_query: CallbackQuery):
     reply = get_reply(user.state)
 
     user.set(state=reply['next'])
-    await send_answer(message=callback_query, reply=reply, keyboard=keyboard)
+    await send_answer(chat_id=callback_query.from_user.id, reply=reply, keyboard=keyboard)
 
 
 if __name__ == '__main__':
