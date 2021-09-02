@@ -5,7 +5,7 @@ import logging
 import dotenv
 import requests
 
-from models import User, UserInfo, Dialog, Discussion, Team
+from models import User, UserInfo, Dialog, Discussion, Team, Suggestion
 
 
 dotenv.load_dotenv(dotenv.find_dotenv())
@@ -65,7 +65,7 @@ def add_discussion(discussion: Discussion) -> dict:
     return post(f'/user/tg-id/{discussion.user_id}/dialog', json=json)
 
 
-def add_dialog(who: int, discussion_id: int, text: str, time: datetime, moderator: int = None) -> dict:  # TODO why is this now working
+def add_dialog(who: int, discussion_id: int, text: str, time: datetime, moderator: int = None) -> dict:
     json = {
         'text': text,
         'timestamp': int(round(time.timestamp() * 1000))
@@ -74,6 +74,19 @@ def add_dialog(who: int, discussion_id: int, text: str, time: datetime, moderato
     if moderator is not None:
         json['fromModerator'] = moderator
     return post(f'/user/tg-id/{who}/dialog/{discussion_id}/add-message', json=json)
+
+
+def close_discussion(who: int, discussion_id: int) -> dict:
+    return post(f'/user/tg-id/{who}/dialog/{discussion_id}/resolve')
+
+
+def add_suggestion(suggestion: Suggestion):
+    json = {
+        'timestamp': int(round(suggestion.time.timestamp() * 1000)),
+        'message': suggestion.text,
+        'topicByLabel': suggestion.theme
+    }
+    return post(f'/user/tg-id/{suggestion.user_id}/feedback', json=json)
 
 
 def get_competitions() -> dict:

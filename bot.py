@@ -107,6 +107,7 @@ async def close_discussion_automatically(discussion_id: int):
 
     if start_time == end_time and discussion.finished == False:
         discussion.set(finished=True)
+        api.close_discussion(discussion.user_id, discussion.server_id)
 
         logging.info(f'Closing all questions in moderator_chat about {discussion} due to time limit')
         for question in discussion.get_questions():
@@ -224,7 +225,7 @@ async def group_chat(message: Message):
                 await message.reply(chat_message)
                 return
 
-            # TODO
+            # TODO check
             user_id = int(res['data']['telegramId'])
 
             user_message: str = commands['user_invitation']
@@ -311,6 +312,7 @@ async def question_menu(message: Message):
         elif message.text == '/close':
             discussion: Discussion = Discussion.get(int(user.cache))
             discussion.set(finished=True)
+            api.close_discussion(discussion.user_id, discussion.server_id)
             user.set(cache="")
 
             logging.info(f'Closing all questions in moderator_chat about {discussion}')
@@ -594,6 +596,7 @@ async def suggestion_menu(message: Message):
 
         await bot.send_message(get_config()['admin_chat'], admin_chat_message, parse_mode='HTML')  # html to parse %user_id%
         suggestion.set(text=message.text)
+        api.add_suggestion(suggestion)
         user.set(cache='')
 
     user.set(state=reply['next'])

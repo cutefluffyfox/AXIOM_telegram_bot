@@ -1,6 +1,6 @@
 {
-  "waiting_time": 1200,
-  "poll_life_time": 10,
+  "waiting_time": 172800,
+  "poll_life_time": 172800,
   "moderator_chat": -1001150148217,
   "admin_chat": -1001150148217,
   "suggestions_limit": 7,

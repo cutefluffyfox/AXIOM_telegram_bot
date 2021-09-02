@@ -313,6 +313,7 @@ class Suggestion(SqlAlchemyBase):
 
     id = sqlalchemy.Column(sqlalchemy.Integer, primary_key=True, nullable=False, autoincrement=True)
     user_id = sqlalchemy.Column(sqlalchemy.Integer, sqlalchemy.ForeignKey("users.id"), nullable=False)
+    time = sqlalchemy.Column(sqlalchemy.TIMESTAMP, nullable=False)
     theme = sqlalchemy.Column(sqlalchemy.TEXT, nullable=False)
     text = sqlalchemy.Column(sqlalchemy.TEXT, nullable=True)
 
@@ -342,7 +343,7 @@ class Suggestion(SqlAlchemyBase):
         """
         with contextlib.closing(create_session()) as session:
             logging.info(f'Add Suggestion(user_id={user_id}, theme="{theme}") to database')
-            session.add(Suggestion(user_id=user_id, theme=theme))
+            session.add(Suggestion(user_id=user_id, theme=theme, time=datetime.now()))
             session.commit()
 
     @staticmethod

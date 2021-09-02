@@ -8,10 +8,12 @@ In order for bot to work you need to create environment variables:
 BOT_TOKEN=0000000000:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
 CONNECTION_STRING=mysql://Login:Password@Host/DatabaseName
 SERVER=http://HOST:PORT
+API_KEY=SoM3_RaNd0m_LoNg_StR1Ng
 ```
 ``BOT_TOKEN`` is token toy get from @BotFather in telegram<br>
 ``CONNECTION_STRING`` is string to connect to your database<br>
 ``SERVER`` is string to server<br>
+``API_KEY`` is string to work with API
 
 
 You can make ``.env`` file, copy and paste there block above, or set variable by hand through console<br>
@@ -129,9 +131,16 @@ Links have two types:
 ``config.json`` is file for all bot variables, here is a list what 
 each variable mean:
 - ``waiting_time`` is amount of second when question will automatically close
+- ``poll_life_time`` is amount of seconds for poll in team chats
 - ``moderator_chat`` is moderator chat id
 - ``admin_chat`` is admin chat id (can be same as ``moderator_chat``)
 - ``suggestions_limit`` is a print limit for user suggestions
 - ``restricted_messages`` messages that bot will replace to * (unknown state)
-- ``server_error_messages`` if false, bot will ignore api replies
+- ``bot_admin_access`` access that EXACTLY must have bot in team chats
+- ``server_error_messages`` if false, bot will ignore api replies other way bot will send error messages
+
+
+## Additional information
+Some commands that help moderators to work easier:
+- ``/get_chat_id`` sends chat_id to group (work only in group chats)
 
