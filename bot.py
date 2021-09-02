@@ -24,7 +24,8 @@ from bot_functions import (get_reply, is_unknown_reply, button_to_command, get_c
 logging.basicConfig(
     format='%(asctime)s %(levelname)-8s %(message)s',
     level=logging.INFO,
-    datefmt='%Y-%m-%d %H:%M:%S'
+    datefmt='%Y-%m-%d %H:%M:%S',
+    filename=get_config()['logging_file']
 )
 
 
@@ -180,7 +181,7 @@ async def group_chat(message: Message):
             return
         discussion = Discussion.get(question.discussion_id)
 
-        Dialog.add(question.discussion_id, message.text, message.from_user.id, message.message_id, bot_message_id, moderator=True)
+        Dialog.add(question.discussion_id, message.text, message.from_user.id, message.message_id, bot_message_id, question.server_id, moderator=True)
         moderator_chat_message: str = get_reply('moderator_chat', '#WAITING')['moderator_chat_message']
         moderator_chat_message = moderator_chat_message.replace('%theme%', discussion.theme)
         moderator_chat_message = moderator_chat_message.replace('%id%', str(discussion.id))
